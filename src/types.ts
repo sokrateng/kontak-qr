@@ -5,7 +5,12 @@ export interface Location {
   readonly id: string
   readonly label: string
   readonly place: string
+  /** false ise Tam kart / Kısa QR'a ve "Kişiyi gönder" mesajına girmez. Tek link modunda yine seçilebilir. */
+  readonly shared: boolean
 }
+
+/** Karttan çıkarılabilen alanlar. Ad ve firma her zaman karttadır. */
+export type HideableField = 'title' | 'phone' | 'email' | 'website' | 'address' | 'linkedin' | 'x' | 'whatsapp'
 
 export interface BankAccount {
   readonly id: string
@@ -30,6 +35,8 @@ export interface Profile {
   readonly website: string
   readonly address: string
   readonly locations: readonly Location[]
+  /** Tam kart ve Kısa modda paylaşılmayacak alanlar. */
+  readonly hiddenFields: readonly HideableField[]
   readonly linkedin: string
   readonly x: string
 }

@@ -329,6 +329,57 @@ try {
     assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('kontak-qr:v1')).profiles[0].firstName), 'Şule')
   })
 
+  await step('Tam kartta paylaşılacaklar: Ev konumu ve telefon karttan çıkar, Tek link etkilenmez', async () => {
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, 'canShare', { value: undefined, configurable: true })
+      Object.defineProperty(navigator, 'share', { value: async (d) => { window.__shared = d }, configurable: true })
+    })
+    const sendNow = async () => {
+      await page.evaluate(() => { window.__shared = null })
+      await click('[data-act="share-contact"]')
+      return page.evaluate(() => window.__shared)
+    }
+    const openEdit = async () => {
+      await click('[data-act="tab"][data-tab="people"]')
+      await click('.person [data-act="edit-profile"]')
+      await new Promise((r) => setTimeout(r, 700))
+    }
+    await click('[data-act="tab"][data-tab="card"]')
+    assert.equal(await text('.name'), 'Şule Öztürk')
+    const before = (await sendNow()).text
+    assert.ok(before.includes('Ev konumu: ') && before.includes('Telefon: +90 532 111 22 33'))
+
+    await openEdit()
+    assert.equal(await page.$$eval('[name="share"]', (els) => els.every((e) => e.checked)), true)
+    await page.evaluate(() => {
+      const row = [...document.querySelectorAll('[data-loc-row]')].find((r) => r.querySelector('[name="locLabel"]').value === 'Ev')
+      row.querySelector('[name="locShare"]').click()
+      document.querySelector('[name="share"][value="phone"]').click()
+    })
+    await click('form[data-form="profile"] button[type="submit"]')
+    assert.equal(await text('.name'), 'Şule Öztürk')
+
+    const full = (await sendNow()).text
+    assert.ok(!full.includes('Ev konumu') && !full.includes('Telefon') && !full.includes('wa.me/90'))
+    assert.ok(full.includes('İş konumu: ') && full.includes('LinkedIn: '))
+    await click('[data-act="mode"][data-mode="short"]')
+    const short = (await sendNow()).text
+    assert.ok(!short.includes('Telefon'))
+    // Tek link: paylaşıma kapalı konum yine seçilebilir
+    await click('[data-act="mode"][data-mode="link"]')
+    const chips = await page.$$eval('.chips.small .chip', (els) => els.map((e) => e.textContent))
+    assert.ok(chips.includes('Ev konumu') && chips.includes('İş konumu'))
+    await page.evaluate(() => [...document.querySelectorAll('.chips.small .chip')].find((e) => e.textContent === 'Ev konumu').click())
+    assert.equal((await sendNow()).text, 'Şule Öztürk · Ev konumu\nhttps://maps.app.goo.gl/ev123')
+
+    // ayarlar kayıtlı kalır
+    await openEdit()
+    assert.equal(await page.$eval('[name="share"][value="phone"]', (e) => e.checked), false)
+    assert.equal(await page.$eval('[name="share"][value="email"]', (e) => e.checked), true)
+    assert.equal(await page.evaluate(() => [...document.querySelectorAll('[data-loc-row]')].map((r) => r.querySelector('[name="locShare"]').checked).join()), 'false,true')
+    await click('.sheet-back')
+  })
+
   await step('geçersiz kod hata gösterir', async () => {
     await click('[data-act="tab"][data-tab="people"]')
     await click('[data-act="open-import"]')

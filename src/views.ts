@@ -1,6 +1,7 @@
 import { icons } from './icons.ts'
 import { availableLinks } from './links.ts'
 import { makeQr, type QrResult } from './qr.ts'
+import { forCard } from './card.ts'
 import { formatIban, normalizeIban } from './iban.ts'
 import type { AppState, BankAccount, CardMode, LinkEntry, LinkKey, Profile, WifiNetwork } from './types.ts'
 import { escapeHtml as h, initials, type Tab, type UiState } from './ui-state.ts'
@@ -29,7 +30,7 @@ export function resolveLink(links: readonly LinkEntry[], wanted: LinkKey): LinkE
 
 export function cardPayload(p: Profile, mode: CardMode, wanted: LinkKey): string {
   if (mode === 'link') return resolveLink(availableLinks(p), wanted)?.url ?? ''
-  return buildVCard(p, mode)
+  return buildVCard(forCard(p), mode)
 }
 
 function density(qr: QrResult | null, hasData: boolean): string {

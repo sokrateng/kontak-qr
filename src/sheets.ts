@@ -1,3 +1,4 @@
+import { HIDEABLE_FIELDS } from './card.ts'
 import { formatIban } from './iban.ts'
 import { icons } from './icons.ts'
 import { makeQr } from './qr.ts'
@@ -39,6 +40,7 @@ export function locationRow(loc: Location): string {
         <button type="button" class="btn ghost small" data-act="map-paste">Yapıştır</button>
         <button type="button" class="btn ghost small" data-act="map-here">Konumum</button>
       </div>
+      <label class="check loc-share"><input type="checkbox" name="locShare" value="${h(loc.id)}" ${loc.shared ? 'checked' : ''}><span>Tam kartta paylaş</span></label>
     </div>
     <button type="button" class="icon-btn" data-act="remove-location" aria-label="Konumu sil">${icons.close}</button>
   </div>`
@@ -50,6 +52,20 @@ function locationsSection(p: Profile): string {
     <div class="loc-list" data-loc-list>${p.locations.map(locationRow).join('')}</div>
     <button type="button" class="btn ghost small" data-act="add-location">${icons.plus}<span>Konum ekle</span></button>
     <p class="field-note loc-note">Haritada seç: Google Maps açılır, yeri bulup Paylaş, Kopyala de, buraya dönüp Yapıştır'a bas. Konumum: bulunduğun yerin linkini alır. Düz adres de yazabilirsin. Her konum için ayrı QR verilebilir.</p>
+  </div>`
+}
+
+/** Hangi alanların Tam kart / Kısa QR'a ve "Kişiyi gönder"e gireceği. İşaretli olan paylaşılır. */
+function shareSection(p: Profile): string {
+  const hidden = new Set<string>(p.hiddenFields)
+  const boxes = HIDEABLE_FIELDS.map(
+    (f) =>
+      `<label class="check"><input type="checkbox" name="share" value="${f.key}" ${hidden.has(f.key) ? '' : 'checked'}><span>${h(f.label)}</span></label>`,
+  ).join('')
+  return `<div class="share-section">
+    <p class="loc-title">Tam kartta paylaşılacaklar</p>
+    <div class="share-grid">${boxes}</div>
+    <p class="field-note">İşaretsiz olanlar Tam kart ve Kısa QR'a, bir de Kişiyi gönder'e girmez. Tek link modunda yine seçilebilir. Telefonu çıkarırsan telefondan üretilen WhatsApp linki de çıkar. Konumlar için her satırdaki kutuyu kullan.</p>
   </div>`
 }
 
@@ -76,6 +92,7 @@ function profileForm(p: Profile, isNew: boolean, imported: boolean): string {
       ${locationsSection(p)}
       ${field('LinkedIn', 'linkedin', p.linkedin, 'autocapitalize="none" placeholder="kullanıcı adı veya link"')}
       ${field('X', 'x', p.x, 'autocapitalize="none" placeholder="@kullanıcı"')}
+      ${shareSection(p)}
       <div class="form-actions">
         <button type="submit" class="btn primary">Kaydet</button>
         ${isNew ? '' : `<button type="button" class="btn danger" data-act="delete-profile" data-id="${h(p.id)}">Sil</button>`}

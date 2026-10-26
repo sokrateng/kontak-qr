@@ -1,5 +1,6 @@
 import { decodeShare, encodeBackup } from './codec.ts'
 import { contactText, linkMessage } from './contact-text.ts'
+import { HIDEABLE_FIELDS, forCard } from './card.ts'
 import { installDragSort } from './drag.ts'
 import { accountText, isValidIban, normalizeIban } from './iban.ts'
 import { moveItem } from './order.ts'
@@ -177,7 +178,8 @@ async function shareContact(p: Profile): Promise<void> {
     return
   }
   const detail = mode === 'short' ? 'short' : 'full'
-  const file = new File([buildVCard(p, detail)], `${fileSafe(name)}.vcf`, { type: 'text/vcard' })
+  const shared = forCard(p)
+  const file = new File([buildVCard(shared, detail)], `${fileSafe(name)}.vcf`, { type: 'text/vcard' })
   const nav = navigator as Navigator & { canShare?: (data: ShareData) => boolean }
   if (typeof nav.canShare === 'function' && nav.canShare({ files: [file] })) {
     try {
@@ -187,7 +189,7 @@ async function shareContact(p: Profile): Promise<void> {
       if (error instanceof DOMException && error.name === 'AbortError') return
     }
   }
-  await shareText({ text: contactText(p, detail) })
+  await shareText({ text: contactText(shared, detail) })
 }
 
 /** Sağa sola kaydırınca bir sonraki/önceki kayda geçer (kişi, Wi-Fi ağı ya da banka hesabı). */
@@ -229,10 +231,20 @@ function upsert<T extends { readonly id: string }>(list: readonly T[], item: T):
 function readLocations(fd: FormData, keepEmpty: boolean): readonly Location[] {
   const ids = fd.getAll('locId').map(String)
   const labels = fd.getAll('locLabel').map(String)
+  const sharedIds = new Set(fd.getAll('locShare').map(String))
   return fd
     .getAll('locPlace')
-    .map((place, i) => ({ id: ids[i] || newId(), label: (labels[i] ?? '').trim(), place: String(place).trim() }))
+    .map((place, i) => {
+      const id = ids[i] || newId()
+      return { id, label: (labels[i] ?? '').trim(), place: String(place).trim(), shared: sharedIds.has(id) }
+    })
     .filter((loc) => keepEmpty || loc.place !== '')
+}
+
+/** İşaretli kutular karta girer. İşaretsizler gizli alan olur. */
+function readHiddenFields(fd: FormData): Profile['hiddenFields'] {
+  const shared = new Set(fd.getAll('share').map(String))
+  return HIDEABLE_FIELDS.map((f) => f.key).filter((key) => !shared.has(key))
 }
 
 /** Formdaki değerlerden Profile üretir. `keepEmpty`: yarım kalan taslakta boş konum satırları da korunur. */
@@ -251,6 +263,7 @@ function profileFromForm(fd: FormData, keepEmpty: boolean): Profile {
     website: text(fd, 'website'),
     address: text(fd, 'address'),
     locations: readLocations(fd, keepEmpty),
+    hiddenFields: readHiddenFields(fd),
     linkedin: text(fd, 'linkedin'),
     x: text(fd, 'x'),
   }

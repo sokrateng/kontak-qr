@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import jsQR from 'jsqr'
+import { forCard } from './card.ts'
 import { decodeShare, encodeBackup, encodeProfile } from './codec.ts'
 import { contactText, linkMessage } from './contact-text.ts'
 import { accountText, formatIban, isValidIban, normalizeIban } from './iban.ts'
@@ -88,10 +89,59 @@ test('kısa kişi mesajı QR kısa kartıyla aynı alanları içerir', () => {
 const withLocations = {
   ...sample,
   locations: [
-    { id: 'ev', label: 'Ev', place: 'https://maps.app.goo.gl/abc' },
-    { id: 'is', label: 'İş', place: 'Örnek Mah. No 5, İstanbul' },
+    { id: 'ev', label: 'Ev', place: 'https://maps.app.goo.gl/abc', shared: true },
+    { id: 'is', label: 'İş', place: 'Örnek Mah. No 5, İstanbul', shared: true },
   ],
 }
+
+test('forCard: gizlenen alanlar ve paylaşıma kapalı konumlar Tam/Kısa karttan çıkar, Tek link etkilenmez', () => {
+  const p = {
+    ...withLocations,
+    hiddenFields: ['title', 'x'] as const,
+    locations: [
+      { id: 'ev', label: 'Ev', place: 'https://maps.app.goo.gl/abc', shared: false },
+      { id: 'is', label: 'İş', place: 'Örnek Mah. No 5, İstanbul', shared: true },
+    ],
+  }
+  const card = buildVCard(forCard(p), 'full')
+  assert.doesNotMatch(card, /TITLE|Mühendis|x\.com/)
+  assert.doesNotMatch(card, /Ev konumu|maps\.app\.goo\.gl/)
+  assert.match(card, /item\d+\.X-ABLabel:İş konumu/)
+  assert.match(card, /TEL;TYPE=CELL,VOICE:\+905321234567/)
+  const text = contactText(forCard(p))
+  assert.doesNotMatch(text, /Ev konumu|X:|Mühendis/)
+  assert.match(text, /İş konumu: /)
+  // Tek link modu bilerek seçim yaptığı için gizli konum yine seçilebilir
+  assert.deepEqual(availableLinks(p).filter((l) => l.key.startsWith('loc:')).map((l) => l.key), ['loc:ev', 'loc:is'])
+  // Ad ve firma her zaman kartta
+  assert.match(card, /FN:Ayşe Yılmaz/)
+  assert.match(card, /ORG:Örnek/)
+})
+
+test('forCard: telefon gizliyse telefondan üretilen WhatsApp linki de çıkar, kullanıcı adı linki kalır', () => {
+  const noPhone = forCard({ ...sample, hiddenFields: ['phone'] })
+  assert.equal(noPhone.phone, '')
+  assert.doesNotMatch(buildVCard(noPhone, 'full'), /wa\.me\/90|TEL/)
+  assert.equal(availableLinks(noPhone).some((l) => l.key === 'whatsapp'), false)
+  const withUsername = forCard({ ...sample, hiddenFields: ['phone'], whatsappLink: 'https://wa.me/message/ABC123' })
+  assert.equal(availableLinks(withUsername).find((l) => l.key === 'whatsapp')?.url, 'https://wa.me/message/ABC123')
+  const noWhatsapp = forCard({ ...sample, hiddenFields: ['whatsapp'], whatsappLink: 'https://wa.me/message/ABC123' })
+  assert.equal(availableLinks(noWhatsapp).some((l) => l.key === 'whatsapp'), false)
+  assert.match(buildVCard(noWhatsapp, 'short'), /TEL/)
+})
+
+test('eski kayıtlar bozulmaz: konumlar paylaşıma açık gelir, bilinmeyen gizli alan atılır', () => {
+  const old = sanitizeProfile({ firstName: 'Ali', locations: [{ id: 'a', label: 'Ev', place: 'x y z' }] })
+  assert.equal(old?.locations[0]?.shared, true)
+  assert.deepEqual(old?.hiddenFields, [])
+  const fresh = sanitizeProfile({ firstName: 'Ali', hiddenFields: ['phone', 'phone', 'nope', 'title'], locations: [{ id: 'a', place: 'p', shared: false }] })
+  assert.deepEqual(fresh?.hiddenFields, ['phone', 'title'])
+  assert.equal(fresh?.locations[0]?.shared, false)
+  const back = decodeShare(encodeBackup(sanitizeState({ profiles: [{ ...fresh, id: 'p' }] })))
+  assert.ok(back && back.kind === 'backup')
+  assert.deepEqual(back.state.profiles[0]?.hiddenFields, ['phone', 'title'])
+  assert.equal(back.state.profiles[0]?.locations[0]?.shared, false)
+})
 
 test('birden fazla konum: etiketler, harita linki ve düz adres linke çevrilir', () => {
   const locs = availableLinks(withLocations).filter((l) => l.key.startsWith('loc:'))

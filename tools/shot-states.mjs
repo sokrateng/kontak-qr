@@ -65,6 +65,8 @@ try {
   await shot('7-form')
   await page.evaluate(() => document.querySelector('.loc-section').scrollIntoView())
   await shot('8-form-konumlar')
+  await page.evaluate(() => document.querySelector('.share-section').scrollIntoView({ block: 'center' }))
+  await shot('9-form-paylasim')
   if (errors.length > 0) console.log('HATALAR:', errors)
 } finally {
   await browser.close()

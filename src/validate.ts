@@ -1,3 +1,4 @@
+import { isHideableField } from './card.ts'
 import { normalizeIban } from './iban.ts'
 import type { AppState, BankAccount, Location, Profile, WifiNetwork, WifiSecurity } from './types.ts'
 
@@ -31,6 +32,7 @@ export function emptyProfile(isOwner: boolean): Profile {
     website: '',
     address: '',
     locations: [],
+    hiddenFields: [],
     linkedin: '',
     x: '',
   }
@@ -45,18 +47,28 @@ export function emptyAccount(): BankAccount {
 }
 
 export function emptyLocation(): Location {
-  return { id: newId(), label: '', place: '' }
+  return { id: newId(), label: '', place: '', shared: true }
+}
+
+function toLocation(item: Record<string, unknown>): Location {
+  return { id: str(item.id) || newId(), label: str(item.label), place: str(item.place), shared: item.shared !== false }
+}
+
+function sanitizeHiddenFields(raw: Record<string, unknown>): Profile['hiddenFields'] {
+  const list = Array.isArray(raw.hiddenFields) ? raw.hiddenFields : []
+  return list.filter(isHideableField).filter((key, i, all) => all.indexOf(key) === i)
 }
 
 function sanitizeLocations(raw: Record<string, unknown>): readonly Location[] {
   const list = Array.isArray(raw.locations) ? raw.locations : []
   const fromList = list
     .filter(isRecord)
-    .map((item) => ({ id: str(item.id) || newId(), label: str(item.label), place: str(item.place) }))
+    .map(toLocation)
     .filter((loc) => loc.place.trim() !== '')
   // Eski sürümdeki tek "mapsUrl" alanı ilk konum olarak taşınır.
   const legacy = str(raw.mapsUrl).trim()
-  const migrated = fromList.length === 0 && legacy !== '' ? [{ id: newId(), label: '', place: legacy }] : fromList
+  const migrated: readonly Location[] =
+    fromList.length === 0 && legacy !== '' ? [{ id: newId(), label: '', place: legacy, shared: true }] : fromList
   return migrated.slice(0, MAX_LOCATIONS)
 }
 
@@ -77,6 +89,7 @@ export function sanitizeProfile(raw: unknown, fallbackOwner = false): Profile | 
     website: str(raw.website),
     address: str(raw.address),
     locations: sanitizeLocations(raw),
+    hiddenFields: sanitizeHiddenFields(raw),
     linkedin: str(raw.linkedin),
     x: str(raw.x),
   }
@@ -87,10 +100,7 @@ export function sanitizeProfileDraft(raw: unknown): Profile | null {
   const profile = sanitizeProfile(raw)
   if (profile === null || !isRecord(raw)) return profile
   const rows = Array.isArray(raw.locations) ? raw.locations : []
-  const locations = rows
-    .filter(isRecord)
-    .map((item) => ({ id: str(item.id) || newId(), label: str(item.label), place: str(item.place) }))
-    .slice(0, MAX_LOCATIONS)
+  const locations = rows.filter(isRecord).map(toLocation).slice(0, MAX_LOCATIONS)
   return { ...profile, locations }
 }
 

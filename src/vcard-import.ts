@@ -132,7 +132,7 @@ function classifyUrls(fields: readonly Field[]): UrlSlots {
       else if (X_HOST.test(url)) slots.x = slots.x || url
       else if (WA_ME_NUMBER.test(url)) return
       else if (WA_HOST.test(url)) slots.whatsappLink = slots.whatsappLink || url
-      else if (MAPS.test(url)) locations.push({ id: newId(), label: '', place: url })
+      else if (MAPS.test(url)) locations.push({ id: newId(), label: '', place: url, shared: true })
       else slots.website = slots.website || url
     })
   return { ...slots, locations }
