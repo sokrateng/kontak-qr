@@ -146,6 +146,16 @@ function ibanLines(iban: string): string {
   return rows.map((row) => `<span>${h(row)}</span>`).join('')
 }
 
+/** QR'a yalnızca boşluksuz IBAN girer: bankaların IBAN okutma özellikleri en iyi bu düz biçimi okur. */
+export function ibanPayload(a: BankAccount): string {
+  return normalizeIban(a.iban)
+}
+
+function ibanQr(a: BankAccount): string {
+  const qr = makeQr(ibanPayload(a))
+  return qr === null ? '<div class="qr-empty"></div>' : qr.svg
+}
+
 export function accountTitle(a: BankAccount): string {
   return a.label.trim() || a.bank.trim() || 'Banka hesabı'
 }
@@ -165,6 +175,7 @@ export function renderBank(app: AppState): string {
         <h1 class="display name">${h(accountTitle(a))}</h1>
         ${sub === '' ? '' : `<p class="role">${h(sub)}</p>`}
       </header>
+      <div class="qr-frame" aria-label="IBAN QR kodu">${ibanQr(a)}</div>
       <div class="iban-box" data-copy="${h(normalizeIban(a.iban))}" data-copy-toast="IBAN kopyalandı">
         <span class="iban-label">IBAN</span>
         <span class="iban">${ibanLines(a.iban)}</span>

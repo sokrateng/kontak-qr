@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import puppeteer from './browser.mjs'
 import { encodeBackup, encodeProfile } from '../src/codec.ts'
+import { decodeQrSvg } from '../src/qr-decode.ts'
 import { emptyProfile } from '../src/validate.ts'
 
 const url = process.argv[2] ?? 'http://localhost:3000'
@@ -222,6 +223,9 @@ try {
     // Aktif hesap son eklenen (Avro), IBAN gruplu iki satırda
     assert.equal(await text('.name'), 'Avro')
     assert.deepEqual(await page.$$eval('.iban span', (els) => els.map((e) => e.textContent)), ['DE89 3704 0044 0532', '0130 00'])
+    // Ekrandaki QR taranınca boşluksuz IBAN çıkar
+    const qrOnScreen = async () => decodeQrSvg(await page.$eval('.qr-frame svg', (el) => el.outerHTML))
+    assert.equal(await qrOnScreen(), 'DE89370400440532013000')
     await page.evaluate(() => { window.__shared = null })
     await click('[data-act="share-account"]')
     assert.equal(await page.evaluate(() => window.__shared.text), 'Hesap sahibi: Şule Öztürk\nBanka: Başka Banka\nIBAN: DE89 3704 0044 0532 0130 00')
@@ -240,6 +244,7 @@ try {
     await swipe(120)
     assert.equal(await text('.name'), 'Şahsi TL')
     assert.equal(await page.$$eval('.dot', (els) => els.findIndex((e) => e.classList.contains('on'))), 0)
+    assert.equal(await qrOnScreen(), 'TR330006100519786457841326')
     // basılı tutma ile IBAN kopyalama
     await page.evaluate(() => { window.__copied = null })
     const box = await (await page.$('.iban-box')).boundingBox()

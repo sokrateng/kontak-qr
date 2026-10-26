@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import jsQR from 'jsqr'
+import { decodeQrSvg } from './qr-decode.ts'
 import { forCard } from './card.ts'
 import { decodeShare, encodeBackup, encodeProfile } from './codec.ts'
 import { contactText, linkMessage } from './contact-text.ts'
@@ -10,6 +10,8 @@ import { moveItem } from './order.ts'
 import { makeQr } from './qr.ts'
 import { buildVCard } from './vcard.ts'
 import { emptyNetwork, emptyProfile, sanitizeProfile, sanitizeProfileDraft, sanitizeState } from './validate.ts'
+import type { BankAccount } from './types.ts'
+import { ibanPayload, renderBank } from './views.ts'
 import { buildWifi } from './wifi.ts'
 
 const sample = {
@@ -218,6 +220,23 @@ test('hesap mesajı yalnızca dolu alanları içerir, IBAN gruplu yazılır', ()
   assert.equal(accountText({ ...account, holder: '', bank: '', note: '' }), 'IBAN: TR33 0006 1005 1978 6457 8413 26')
 })
 
+test('Banka ekranındaki QR, aktif hesabın boşluksuz IBAN\'ını birebir taşır', () => {
+  const state = sanitizeState({
+    accounts: [
+      { id: 'a', label: 'Şahsi TL', holder: 'Ayşe Yılmaz', bank: 'Örnek Banka', iban: 'TR33 0006 1005 1978 6457 8413 26' },
+      { id: 'b', label: 'Avro', holder: 'Ayşe Yılmaz', bank: 'Başka Banka', iban: 'DE89 3704 0044 0532 0130 00' },
+    ],
+    activeAccountId: 'b',
+  })
+  const svgOf = (html: string): string => /<svg[\s\S]*?<\/svg>/.exec(html)?.[0] ?? ''
+  assert.equal(decodeQrSvg(svgOf(renderBank(state))), 'DE89370400440532013000')
+  const first = { ...state, activeAccountId: 'a' }
+  assert.equal(decodeQrSvg(svgOf(renderBank(first))), VALID_TR_IBAN)
+  assert.equal(ibanPayload(state.accounts[0] as BankAccount), VALID_TR_IBAN)
+  // QR'da hesap sahibi, banka ya da açıklama yok, yalnızca IBAN
+  assert.doesNotMatch(decodeQrSvg(svgOf(renderBank(first))) ?? '', /Ayşe|Banka|\s/)
+})
+
 test('hesaplar yedek koduna girer, boş IBAN\'lı kayıt atılır', () => {
   const state = sanitizeState({
     profiles: [sample],
@@ -296,34 +315,18 @@ test('bozuk veya yabancı metin kod olarak kabul edilmez', () => {
   assert.equal(decodeShare('KQR1:YWJj'), null)
 })
 
-function decodeSvg(svg: string): string | null {
-  const total = Number(/viewBox="0 0 (\d+) /.exec(svg)?.[1])
-  const scale = 6
-  const px = total * scale
-  const data = new Uint8ClampedArray(px * px * 4).fill(255)
-  for (const m of svg.matchAll(/M(\d+) (\d+)h1v1h-1z/g)) {
-    for (let dy = 0; dy < scale; dy += 1) {
-      for (let dx = 0; dx < scale; dx += 1) {
-        const i = ((Number(m[2]) * scale + dy) * px + Number(m[1]) * scale + dx) * 4
-        data[i] = data[i + 1] = data[i + 2] = 0
-      }
-    }
-  }
-  return jsQR(data, px, px)?.data ?? null
-}
-
 test('üretilen QR tarandığında vCard ve Wi-Fi metni birebir döner (Türkçe dahil)', () => {
   const card = buildVCard(sample, 'full')
   const qr = makeQr(card)
   assert.ok(qr !== null)
-  assert.equal(decodeSvg(qr.svg), card)
+  assert.equal(decodeQrSvg(qr.svg), card)
   const short = makeQr(buildVCard(sample, 'short'))
   assert.ok(short !== null)
-  assert.equal(decodeSvg(short.svg), buildVCard(sample, 'short'))
+  assert.equal(decodeQrSvg(short.svg), buildVCard(sample, 'short'))
   const wifi = buildWifi({ ...emptyNetwork(), ssid: 'Çay Ağı', password: 'şifre;ğüİ' })
   const wifiQr = makeQr(wifi)
   assert.ok(wifiQr !== null)
-  assert.equal(decodeSvg(wifiQr.svg), wifi)
+  assert.equal(decodeQrSvg(wifiQr.svg), wifi)
 })
 
 test('QR üretimi Türkçe karakterle çalışır ve çok uzun metni reddeder', () => {
