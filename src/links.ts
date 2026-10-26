@@ -75,6 +75,12 @@ export function locationUrl(raw: string): string {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(value)}`
 }
 
+/** Panodaki metinden harita linkini ya da adresi ayıklar. "Yer adı https://maps..." gibi metinlerde yalnızca linki alır. */
+export function placeFromClipboard(raw: string): string {
+  const link = /https?:\/\/\S+/.exec(raw)
+  return (link === null ? raw.trim() : link[0]).slice(0, 300)
+}
+
 /** "İş" -> "İş konumu", boşsa "Konum". Kullanıcı zaten "konum" yazdıysa olduğu gibi bırakır. */
 export function locationLabel(label: string): string {
   const value = label.trim()

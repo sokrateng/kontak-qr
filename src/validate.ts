@@ -82,6 +82,18 @@ export function sanitizeProfile(raw: unknown, fallbackOwner = false): Profile | 
   }
 }
 
+/** Yarım kalan form taslağı: normal temizlemeden farkla, henüz doldurulmamış boş konum satırlarını da korur. */
+export function sanitizeProfileDraft(raw: unknown): Profile | null {
+  const profile = sanitizeProfile(raw)
+  if (profile === null || !isRecord(raw)) return profile
+  const rows = Array.isArray(raw.locations) ? raw.locations : []
+  const locations = rows
+    .filter(isRecord)
+    .map((item) => ({ id: str(item.id) || newId(), label: str(item.label), place: str(item.place) }))
+    .slice(0, MAX_LOCATIONS)
+  return { ...profile, locations }
+}
+
 function sanitizeSecurity(value: unknown): WifiSecurity {
   return value === 'WEP' || value === 'nopass' ? value : 'WPA'
 }

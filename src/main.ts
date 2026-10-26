@@ -1,10 +1,11 @@
 import { decodeShare, encodeBackup } from './codec.ts'
 import { contactText, linkMessage } from './contact-text.ts'
+import { installDragSort } from './drag.ts'
 import { accountText, isValidIban, normalizeIban } from './iban.ts'
 import { moveItem } from './order.ts'
-import { availableLinks } from './links.ts'
+import { availableLinks, placeFromClipboard } from './links.ts'
 import { locationRow, orderRows, renderSheet } from './sheets.ts'
-import { loadState, saveState } from './store.ts'
+import { clearPending, loadPending, loadState, savePending, saveState } from './store.ts'
 import type { AppState, BankAccount, CardMode, LinkKey, Location, Profile, WifiNetwork, WifiSecurity } from './types.ts'
 import { initialUi, SWIPE_TABS, type Sheet, type Tab, type UiState } from './ui-state.ts'
 import { emptyLocation, newId } from './validate.ts'
@@ -225,17 +226,18 @@ function upsert<T extends { readonly id: string }>(list: readonly T[], item: T):
     : [...list, item]
 }
 
-function readLocations(fd: FormData): readonly Location[] {
+function readLocations(fd: FormData, keepEmpty: boolean): readonly Location[] {
   const ids = fd.getAll('locId').map(String)
   const labels = fd.getAll('locLabel').map(String)
   return fd
     .getAll('locPlace')
     .map((place, i) => ({ id: ids[i] || newId(), label: (labels[i] ?? '').trim(), place: String(place).trim() }))
-    .filter((loc) => loc.place !== '')
+    .filter((loc) => keepEmpty || loc.place !== '')
 }
 
-function saveProfile(fd: FormData): void {
-  const profile: Profile = {
+/** Formdaki değerlerden Profile üretir. `keepEmpty`: yarım kalan taslakta boş konum satırları da korunur. */
+function profileFromForm(fd: FormData, keepEmpty: boolean): Profile {
+  return {
     id: text(fd, 'id'),
     isOwner: text(fd, 'isOwner') === 'true',
     firstName: text(fd, 'firstName'),
@@ -248,10 +250,14 @@ function saveProfile(fd: FormData): void {
     email: text(fd, 'email'),
     website: text(fd, 'website'),
     address: text(fd, 'address'),
-    locations: readLocations(fd),
+    locations: readLocations(fd, keepEmpty),
     linkedin: text(fd, 'linkedin'),
     x: text(fd, 'x'),
   }
+}
+
+function saveProfile(fd: FormData): void {
+  const profile = profileFromForm(fd, false)
   if (fullName(profile) === '' && profile.company === '') {
     toast('Ad ya da firma gir')
     return
@@ -361,7 +367,68 @@ function reloadWhenIdle(): void {
   reloadPending = true
 }
 
+const PENDING_MAX_AGE_MS = 12 * 60 * 60 * 1000
+
+/** Haritalara geçmeden önce formu taslak olarak saklar, iOS uygulamayı bellekten atsa bile dönüşte geri gelir. */
+function savePendingForm(): void {
+  const form = document.querySelector<HTMLFormElement>('form[data-form="profile"]')
+  const sheet = ui.sheet
+  if (form === null || sheet === null || sheet.kind !== 'profile') return
+  savePending({ profile: profileFromForm(new FormData(form), true), owner: sheet.owner, savedAt: Date.now() })
+}
+
+function placeInput(el: HTMLElement): HTMLInputElement | null {
+  return el.closest('[data-loc-row]')?.querySelector<HTMLInputElement>('[name="locPlace"]') ?? null
+}
+
+async function mapPaste(el: HTMLElement): Promise<void> {
+  const input = placeInput(el)
+  if (input === null) return
+  try {
+    const place = placeFromClipboard(await navigator.clipboard.readText())
+    if (place === '') {
+      toast('Panoda link ya da adres yok')
+      return
+    }
+    input.value = place
+    toast('Yapıştırıldı')
+  } catch {
+    toast('Panodan okunamadı. Alana basılı tutup Yapıştır\'ı seç')
+  }
+}
+
+function geolocationMessage(error: GeolocationPositionError): string {
+  return error.code === error.PERMISSION_DENIED
+    ? 'Konum izni verilmedi. Ayarlar, Gizlilik, Konum Servisleri bölümünden izin ver'
+    : 'Konum alınamadı. Açık havada ya da internet varken tekrar dene'
+}
+
+function mapHere(el: HTMLElement): void {
+  const input = placeInput(el)
+  if (input === null) return
+  if (!('geolocation' in navigator)) {
+    toast('Bu cihaz konum almayı desteklemiyor')
+    return
+  }
+  el.classList.add('busy')
+  toast('Konum alınıyor…')
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      el.classList.remove('busy')
+      const coords = `${position.coords.latitude.toFixed(6)},${position.coords.longitude.toFixed(6)}`
+      input.value = `https://www.google.com/maps/search/?api=1&query=${coords}`
+      toast('Bulunduğun konum eklendi')
+    },
+    (error) => {
+      el.classList.remove('busy')
+      toast(geolocationMessage(error))
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 },
+  )
+}
+
 function closeSheet(): void {
+  clearPending()
   ui = { ...ui, sheet: null }
   renderSheetHost()
   if (reloadPending) {
@@ -483,6 +550,15 @@ function onAction(act: string, el: HTMLElement): void {
     case 'remove-location':
       el.closest('[data-loc-row]')?.remove()
       break
+    case 'map-open':
+      savePendingForm()
+      break
+    case 'map-paste':
+      void mapPaste(el)
+      break
+    case 'map-here':
+      mapHere(el)
+      break
     case 'app-qr':
       openSheet({ kind: 'appqr' })
       break
@@ -557,106 +633,22 @@ document.addEventListener('contextmenu', (event) => {
   if (event.target instanceof Element && event.target.closest('[data-copy]') !== null) event.preventDefault()
 })
 
-interface DragState {
-  readonly pointerId: number
-  readonly scroller: HTMLElement
-  readonly list: HTMLElement
-  readonly items: readonly HTMLElement[]
-  readonly from: number
-  readonly startY: number
-  readonly startScroll: number
-  readonly height: number
-  target: number
-}
-
-let drag: DragState | null = null
-const EDGE_TOP = 80
-const EDGE_BOTTOM = 130
-
-function endDrag(): void {
-  if (drag === null) return
-  drag.items.forEach((el) => {
-    el.style.transform = ''
-    el.classList.remove('dragging')
-  })
-  drag.list.classList.remove('drag-active')
-  drag = null
-}
-
-/** Kişiler listesinde tutamaçla sürükleyerek sıralama. Sıra app.profiles dizisine yazılır, Kart ekranı aynı diziyi kullanır. */
-document.addEventListener('pointerdown', (event) => {
-  const grip = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-grip]') : null
-  const row = grip?.closest<HTMLElement>('.person')
-  const list = row?.parentElement
-  if (grip === null || grip === undefined || row === null || row === undefined || list === null || list === undefined || drag !== null) return
-  const items = Array.from(list.children).filter((c): c is HTMLElement => c instanceof HTMLElement)
-  const from = items.indexOf(row)
-  if (from < 0) return
-  grip.setPointerCapture(event.pointerId)
-  const scroller = grip.closest<HTMLElement>('.sheet') ?? must('app')
-  drag = {
-    pointerId: event.pointerId,
-    scroller,
-    list,
-    items,
-    from,
-    startY: event.clientY,
-    startScroll: scroller.scrollTop,
-    height: row.offsetHeight,
-    target: from,
-  }
-  row.classList.add('dragging')
-  list.classList.add('drag-active')
-})
-
-document.addEventListener('pointermove', (event) => {
-  const state = drag
-  if (state === null || event.pointerId !== state.pointerId) return
-  const scroller = state.scroller
-  if (event.clientY < EDGE_TOP) scroller.scrollTop -= 12
-  else if (event.clientY > window.innerHeight - EDGE_BOTTOM) scroller.scrollTop += 12
-  const dy = event.clientY - state.startY + (scroller.scrollTop - state.startScroll)
-  const dragged = state.items[state.from]
-  if (dragged === undefined) return
-  dragged.style.transform = `translateY(${dy}px)`
-  const center = dragged.offsetTop + dragged.offsetHeight / 2 + dy
-  const target = state.items.filter((el, i) => i !== state.from && el.offsetTop + el.offsetHeight / 2 < center).length
-  state.target = target
-  state.items.forEach((el, i) => {
-    if (i === state.from) return
-    const shiftUp = state.from < target && i > state.from && i <= target
-    const shiftDown = target < state.from && i >= target && i < state.from
-    el.style.transform = shiftUp ? `translateY(${-state.height}px)` : shiftDown ? `translateY(${state.height}px)` : ''
-  })
-  event.preventDefault()
-})
-
-function finishDrag(commit: boolean): void {
-  const state = drag
-  if (state === null) return
-  const from = state.from
-  const target = state.target
-  const list = state.list
-  endDrag()
-  if (!commit || target === from) return
-  if (list.dataset.order === 'networks') {
-    setApp({ ...app, networks: moveItem(app.networks, from, target) })
-    list.innerHTML = orderRows(app, 'networks')
-  } else if (list.dataset.order === 'accounts') {
-    setApp({ ...app, accounts: moveItem(app.accounts, from, target) })
-    list.innerHTML = orderRows(app, 'accounts')
-  } else {
-    setApp({ ...app, profiles: moveItem(app.profiles, from, target) })
-  }
-  render(false)
-}
-
-document.addEventListener('pointerup', (event) => {
-  if (drag !== null && event.pointerId === drag.pointerId) finishDrag(true)
-})
-document.addEventListener('pointercancel', (event) => {
-  if (drag !== null && event.pointerId === drag.pointerId) finishDrag(false)
-})
+/** Sürükleme bitince yeni sırayı ilgili listeye yazar. Kart, Wi-Fi ve Banka ekranları aynı diziyi kullanır. */
+installDragSort(
+  () => must('app'),
+  (list, from, target) => {
+    if (list.dataset.order === 'networks') {
+      setApp({ ...app, networks: moveItem(app.networks, from, target) })
+      list.innerHTML = orderRows(app, 'networks')
+    } else if (list.dataset.order === 'accounts') {
+      setApp({ ...app, accounts: moveItem(app.accounts, from, target) })
+      list.innerHTML = orderRows(app, 'accounts')
+    } else {
+      setApp({ ...app, profiles: moveItem(app.profiles, from, target) })
+    }
+    render(false)
+  },
+)
 
 function readText(file: File): Promise<string> {
   return new Promise<string>((resolve, reject) => {
@@ -681,7 +673,7 @@ async function importVcf(input: HTMLInputElement): Promise<void> {
       return
     }
     if (found.length === 1) {
-      openSheet({ kind: 'profile', id: null, owner: app.profiles.length === 0, draft: first })
+      openSheet({ kind: 'profile', id: null, owner: app.profiles.length === 0, draft: first, imported: true })
       return
     }
     setApp({ ...app, profiles: [...app.profiles, ...found], activeProfileId: first.id })
@@ -720,6 +712,13 @@ document.addEventListener('submit', (event) => {
 })
 
 render(true)
+
+const pendingForm = loadPending(PENDING_MAX_AGE_MS)
+if (pendingForm !== null) {
+  openSheet({ kind: 'profile', id: pendingForm.profile.id, owner: pendingForm.owner, draft: pendingForm.profile })
+  toast('Yarım kalan form geri yüklendi')
+}
+
 window.addEventListener('resize', fitAll)
 if (document.fonts !== undefined) void document.fonts.ready.then(fitAll)
 

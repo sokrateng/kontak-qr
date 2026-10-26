@@ -6,7 +6,7 @@ export type Tab = 'card' | 'wifi' | 'bank' | 'people' | 'more'
 export const SWIPE_TABS: readonly Tab[] = ['card', 'wifi', 'bank']
 
 export type Sheet =
-  | { readonly kind: 'profile'; readonly id: string | null; readonly owner: boolean; readonly draft?: Profile }
+  | { readonly kind: 'profile'; readonly id: string | null; readonly owner: boolean; readonly draft?: Profile; readonly imported?: boolean }
   | { readonly kind: 'wifi'; readonly id: string | null }
   | { readonly kind: 'account'; readonly id: string | null }
   | { readonly kind: 'order'; readonly list: 'networks' | 'accounts' }

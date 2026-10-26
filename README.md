@@ -20,7 +20,7 @@ Etkinliklerde basılı kartvizit vermek yerine telefonunu göstermek, evdeki mis
 ## Özellikler
 
 - **Kartvizit QR'ı:** vCard 3.0 olarak ad, firma, pozisyon, telefon, e-posta, web, adres ve linkler. Üç mod var: **Tam kart**, **Kısa** (ad, firma, telefon, e-posta) ve **Tek link** (yalnızca LinkedIn, X, WhatsApp, web ya da bir konum).
-- **Birden fazla konum:** kişi başına İş, Ev, Şube gibi adlandırılmış konumlar. Harita linki ya da düz adres yazılır. Her konum Tek link modunda kendi QR'ını verir, tam kartta etiketli link olarak rehbere düşer.
+- **Birden fazla konum:** kişi başına İş, Ev, Şube gibi adlandırılmış konumlar. Harita linki ya da düz adres yazılır. Her konum Tek link modunda kendi QR'ını verir, tam kartta etiketli link olarak rehbere düşer. Konum satırında üç yardımcı var: **Haritada seç** (Google Maps'i açar, orada Paylaş, Kopyala, sonra **Yapıştır**), **Konumum** (telefonun GPS'inden bulunduğun yerin linkini üretir) ve düz adres yazma. Haritaya geçerken form taslak olarak saklanır, iOS uygulamayı bellekten atsa bile dönüşte geri gelir.
 - **Banka hesapları:** başlık, hesap sahibi, banka, IBAN ve açıklama. IBAN mod-97 ile doğrulanır, yanlış IBAN kaydedilmez. Tek dokunuşla kopyala, "Bilgileri gönder" ile okunabilir mesaj olarak paylaş. IBAN hiçbir QR'a ya da kart mesajına girmez.
 - **Okunabilirlik göstergesi:** QR sıklaştıkça uyarır, kısa moda geçmeyi önerir.
 - **Wi-Fi QR'ı:** birden fazla ağ, gizli şifre (göz simgesiyle gösterilir), WPA/WEP/açık ağ.
@@ -62,6 +62,7 @@ Etkinliklerde basılı kartvizit vermek yerine telefonunu göstermek, evdeki mis
 - Ekran uyanık tutma (Wake Lock) iOS 14'te yoktur. QR gösterirken ekran kararabilir.
 - Çok küçük ekranlarda (320 px genişlik) içerik sığmazsa Kart ve Wi-Fi sayfaları kaydırılabilir kalır.
 - Safari sekmesinde ekranın kenarından başlayan kaydırma geri gitme hareketi sayılır. Ana ekrandan açılan uygulamada sorun olmaz.
+- Konum satırındaki **Yapıştır** (panodan okuma) ve **Konumum** (GPS) düğmeleri iOS'un izin sorularına bağlıdır. Çalışmazsa linki alana elle yapıştırmak ya da adres yazmak yeterlidir. Gerçek bir iPhone'da doğrulanmamıştır.
 - WhatsApp kullanıcı adı linki alanı, WhatsApp'ın link biçimine bağlıdır ve gerçek bir kullanıcı adı linkiyle doğrulanmamıştır.
 
 ## Geliştirme
@@ -109,6 +110,7 @@ src/
   codec.ts         yedek ve kart kodları (KQR1:)
   qr.ts            QR üretimi ve okunabilirlik
   order.ts         sıralama yardımcısı
+  drag.ts          tutamaçla sürükleyerek sıralama
   store.ts         localStorage
   sw.ts            service worker
   template.html    sayfa ve CSS

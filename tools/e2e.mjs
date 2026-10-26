@@ -270,6 +270,65 @@ try {
     assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('kontak-qr:v1')).accounts.length), 1)
   })
 
+  await step('konum araçları: Konumum (GPS), Yapıştır, Haritada seç taslağı ve geri yükleme', async () => {
+    await browser.defaultBrowserContext().overridePermissions(new URL(url).origin, ['geolocation'])
+    await page.setGeolocation({ latitude: 41.015137, longitude: 28.97953 })
+    const lastPlace = () => page.evaluate(() => { const p = document.querySelectorAll('[name="locPlace"]'); return p[p.length - 1].value })
+    const pressLast = (act) => page.evaluate((a) => { const b = [...document.querySelectorAll(`[data-act="${a}"]`)]; b[b.length - 1].click() }, act)
+    const stubClipboard = (text) => page.evaluate((t) => {
+      Object.defineProperty(navigator, 'clipboard', { value: { readText: async () => t, writeText: async () => {} }, configurable: true })
+    }, text)
+    const pending = () => page.evaluate(() => JSON.parse(localStorage.getItem('kontak-qr:pending')))
+
+    await click('[data-act="tab"][data-tab="people"]')
+    await click('.person [data-act="edit-profile"]')
+    await new Promise((r) => setTimeout(r, 700))
+    await click('[data-act="add-location"]')
+
+    await pressLast('map-here')
+    await new Promise((r) => setTimeout(r, 700))
+    assert.equal(await lastPlace(), 'https://www.google.com/maps/search/?api=1&query=41.015137,28.979530')
+
+    await stubClipboard('Kafe Örnek\nhttps://maps.app.goo.gl/AbC123')
+    await pressLast('map-paste')
+    await new Promise((r) => setTimeout(r, 200))
+    assert.equal(await lastPlace(), 'https://maps.app.goo.gl/AbC123')
+    assert.match(await text('#toast'), /Yapıştırıldı/)
+
+    await stubClipboard('   ')
+    await pressLast('map-paste')
+    await new Promise((r) => setTimeout(r, 200))
+    assert.equal(await lastPlace(), 'https://maps.app.goo.gl/AbC123')
+    assert.match(await text('#toast'), /Panoda link ya da adres yok/)
+
+    // Haritada seç: formu taslak olarak saklar (gerçek gezinmeyi testte engelle)
+    await page.evaluate(() =>
+      document.addEventListener('click', (e) => {
+        if (e.target instanceof Element && e.target.closest('a[data-act="map-open"]') !== null) e.preventDefault()
+      }, true),
+    )
+    await fill('firstName', 'Taslak')
+    await click('[data-act="add-location"]')
+    await pressLast('map-open')
+    const saved = await pending()
+    assert.equal(saved.profile.firstName, 'Taslak')
+    assert.equal(saved.profile.locations.length, 4)
+    assert.equal(saved.profile.locations[3].place, '')
+
+    // iOS uygulamayı bellekten atmış gibi: sayfayı yenile, form taslaktan geri gelsin
+    await page.reload({ waitUntil: 'networkidle0' })
+    await new Promise((r) => setTimeout(r, 800))
+    assert.equal(await page.$eval('[name="firstName"]', (el) => el.value), 'Taslak')
+    assert.equal((await page.$$('[data-loc-row]')).length, 4)
+    assert.equal(await page.evaluate(() => document.querySelectorAll('[name="locPlace"]')[2].value), 'https://maps.app.goo.gl/AbC123')
+    assert.match(await text('#toast'), /Yarım kalan form/)
+
+    // kaydetmeden kapat: taslak silinir, kayıtlı kişi değişmez
+    await click('.sheet-back')
+    assert.equal(await pending(), null)
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('kontak-qr:v1')).profiles[0].firstName), 'Şule')
+  })
+
   await step('geçersiz kod hata gösterir', async () => {
     await click('[data-act="tab"][data-tab="people"]')
     await click('[data-act="open-import"]')

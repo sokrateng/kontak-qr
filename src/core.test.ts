@@ -4,11 +4,11 @@ import jsQR from 'jsqr'
 import { decodeShare, encodeBackup, encodeProfile } from './codec.ts'
 import { contactText, linkMessage } from './contact-text.ts'
 import { accountText, formatIban, isValidIban, normalizeIban } from './iban.ts'
-import { availableLinks, e164, linkedinUrl, locationLabel, whatsappUrl, xUrl } from './links.ts'
+import { availableLinks, e164, linkedinUrl, locationLabel, placeFromClipboard, whatsappUrl, xUrl } from './links.ts'
 import { moveItem } from './order.ts'
 import { makeQr } from './qr.ts'
 import { buildVCard } from './vcard.ts'
-import { emptyNetwork, emptyProfile, sanitizeProfile, sanitizeState } from './validate.ts'
+import { emptyNetwork, emptyProfile, sanitizeProfile, sanitizeProfileDraft, sanitizeState } from './validate.ts'
 import { buildWifi } from './wifi.ts'
 
 const sample = {
@@ -102,6 +102,20 @@ test('birden fazla konum: etiketler, harita linki ve düz adres linke çevrilir'
   assert.equal(locationLabel(''), 'Konum')
   assert.equal(locationLabel('Konum 2'), 'Konum 2')
   assert.equal(locationLabel('Şube'), 'Şube konumu')
+})
+
+test('panodan konum: yer adı içeren metinde yalnızca link, düz adreste adres alınır', () => {
+  assert.equal(placeFromClipboard('Kafe Örnek\nhttps://maps.app.goo.gl/AbC123 '), 'https://maps.app.goo.gl/AbC123')
+  assert.equal(placeFromClipboard('https://maps.apple.com/?ll=41.0,29.0&q=Ev'), 'https://maps.apple.com/?ll=41.0,29.0&q=Ev')
+  assert.equal(placeFromClipboard('  Örnek Mah. No 3, İstanbul \n'), 'Örnek Mah. No 3, İstanbul')
+  assert.equal(placeFromClipboard('   '), '')
+  assert.equal(placeFromClipboard('x'.repeat(500)).length, 300)
+})
+
+test('yarım kalan form taslağı boş konum satırlarını korur, normal temizleme atar', () => {
+  const raw = { firstName: 'Ali', locations: [{ id: 'a', label: 'İş', place: '' }, { id: 'b', label: 'Ev', place: 'https://maps.app.goo.gl/x' }] }
+  assert.equal(sanitizeProfileDraft(raw)?.locations.length, 2)
+  assert.equal(sanitizeProfile(raw)?.locations.length, 1)
 })
 
 test('tek link mesajı kişiyi ve seçilen konumu içerir', () => {

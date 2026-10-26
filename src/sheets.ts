@@ -34,6 +34,11 @@ export function locationRow(loc: Location): string {
     <div class="loc-fields">
       <input name="locLabel" value="${h(loc.label)}" placeholder="Başlık (İş, Ev…)" autocomplete="off" autocapitalize="words" aria-label="Konum başlığı">
       <input name="locPlace" value="${h(loc.place)}" placeholder="Harita linki ya da adres" inputmode="url" autocomplete="off" autocapitalize="none" aria-label="Konum linki ya da adresi">
+      <div class="loc-tools">
+        <a class="btn ghost small" href="https://www.google.com/maps" target="_blank" rel="noopener" data-act="map-open">Haritada seç</a>
+        <button type="button" class="btn ghost small" data-act="map-paste">Yapıştır</button>
+        <button type="button" class="btn ghost small" data-act="map-here">Konumum</button>
+      </div>
     </div>
     <button type="button" class="icon-btn" data-act="remove-location" aria-label="Konumu sil">${icons.close}</button>
   </div>`
@@ -44,7 +49,7 @@ function locationsSection(p: Profile): string {
     <p class="loc-title">Konumlar</p>
     <div class="loc-list" data-loc-list>${p.locations.map(locationRow).join('')}</div>
     <button type="button" class="btn ghost small" data-act="add-location">${icons.plus}<span>Konum ekle</span></button>
-    <p class="field-note loc-note">Haritalar'dan Paylaş, Kopyala ile aldığın linki ya da düz bir adresi yazabilirsin. Her konum için ayrı QR verilebilir.</p>
+    <p class="field-note loc-note">Haritada seç: Google Maps açılır, yeri bulup Paylaş, Kopyala de, buraya dönüp Yapıştır'a bas. Konumum: bulunduğun yerin linkini alır. Düz adres de yazabilirsin. Her konum için ayrı QR verilebilir.</p>
   </div>`
 }
 
@@ -179,8 +184,8 @@ export function renderSheet(sheet: Sheet, app: AppState, appUrl: string): string
   switch (sheet.kind) {
     case 'profile': {
       const found = app.profiles.find((p) => p.id === sheet.id)
-      const draft = sheet.draft === undefined ? undefined : { ...sheet.draft, isOwner: sheet.owner }
-      return profileForm(found ?? draft ?? emptyProfile(sheet.owner), found === undefined, draft !== undefined)
+      const draft = sheet.draft === undefined ? undefined : { ...sheet.draft, isOwner: found?.isOwner ?? sheet.owner }
+      return profileForm(draft ?? found ?? emptyProfile(sheet.owner), found === undefined, sheet.imported === true)
     }
     case 'wifi': {
       const found = app.networks.find((n) => n.id === sheet.id)
