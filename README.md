@@ -7,6 +7,7 @@ QR kodla kartvizit, arkadaş kartları ve Wi-Fi paylaşımı. Hesap yok, sunucu 
 <p>
   <img src="screenshots/kart.png" alt="Kart ekranı" width="240">
   <img src="screenshots/wifi.png" alt="Wi-Fi ekranı" width="240">
+  <img src="screenshots/banka.png" alt="Banka ekranı" width="240">
   <img src="screenshots/kisiler.png" alt="Kişiler ekranı" width="240">
 </p>
 
@@ -18,11 +19,13 @@ Etkinliklerde basılı kartvizit vermek yerine telefonunu göstermek, evdeki mis
 
 ## Özellikler
 
-- **Kartvizit QR'ı:** vCard 3.0 olarak ad, firma, pozisyon, telefon, e-posta, web, adres ve linkler. Üç mod var: **Tam kart**, **Kısa** (ad, firma, telefon, e-posta) ve **Tek link** (yalnızca LinkedIn, X, WhatsApp, web ya da konum).
+- **Kartvizit QR'ı:** vCard 3.0 olarak ad, firma, pozisyon, telefon, e-posta, web, adres ve linkler. Üç mod var: **Tam kart**, **Kısa** (ad, firma, telefon, e-posta) ve **Tek link** (yalnızca LinkedIn, X, WhatsApp, web ya da bir konum).
+- **Birden fazla konum:** kişi başına İş, Ev, Şube gibi adlandırılmış konumlar. Harita linki ya da düz adres yazılır. Her konum Tek link modunda kendi QR'ını verir, tam kartta etiketli link olarak rehbere düşer.
+- **Banka hesapları:** başlık, hesap sahibi, banka, IBAN ve açıklama. IBAN mod-97 ile doğrulanır, yanlış IBAN kaydedilmez. Tek dokunuşla kopyala, "Bilgileri gönder" ile okunabilir mesaj olarak paylaş. IBAN hiçbir QR'a ya da kart mesajına girmez.
 - **Okunabilirlik göstergesi:** QR sıklaştıkça uyarır, kısa moda geçmeyi önerir.
 - **Wi-Fi QR'ı:** birden fazla ağ, gizli şifre (göz simgesiyle gösterilir), WPA/WEP/açık ağ.
-- **Birden fazla kişi:** kendi kartın ve arkadaşlarının kartları. Kart ve Wi-Fi ekranlarında sağa sola kaydırarak geçilir.
-- **Sürükleyerek sıralama:** kişiler ve Wi-Fi ağları. Sıra, kaydırma sırasıyla birebir aynıdır.
+- **Birden fazla kişi, ağ ve hesap:** Kart, Wi-Fi ve Banka ekranlarında sağa sola kaydırarak geçilir.
+- **Sürükleyerek sıralama:** kişiler, Wi-Fi ağları ve banka hesapları. Sıra, kaydırma sırasıyla birebir aynıdır.
 - **Kişiyi gönder:** ekrandaki moda göre (Tek link, Kısa, Tam kart) paylaşım menüsünden okunabilir mesaj ya da kişi dosyası (.vcf) gönderir.
 - **Rehberden ekle:** iPhone Rehber'den dışa aktarılan `.vcf` dosyalarını okur (iOS Rehber, Android, vCard 2.1/3.0/4.0).
 - **Link temizleme:** LinkedIn ve X linklerindeki takip parametrelerini (`?utm_...`) atar, QR kısalır.
@@ -37,8 +40,8 @@ Etkinliklerde basılı kartvizit vermek yerine telefonunu göstermek, evdeki mis
 
 ## Gizlilik
 
-- Hiçbir bilgi bir sunucuya gönderilmez. Kartlar, Wi-Fi şifreleri ve ayarlar tarayıcının `localStorage` alanında kalır.
-- Yedek kodu (`KQR1:...`) şifreli değil, yalnızca base64'tür ve Wi-Fi şifrelerini içerir. Güvenmediğin birine gönderme.
+- Hiçbir bilgi bir sunucuya gönderilmez. Kartlar, Wi-Fi şifreleri, IBAN'lar ve ayarlar tarayıcının `localStorage` alanında şifresiz saklanır. Telefonun kilidi bu bilgilerin tek koruması olur.
+- Yedek kodu (`KQR1:...`) şifreli değil, yalnızca base64'tür. Wi-Fi şifrelerini ve banka hesaplarını içerir. Güvenmediğin birine gönderme.
 - Uygulama dışarıya yalnızca kendi dosyalarını (HTML, simgeler) indirir. Yazı tipi ve QR kütüphanesi uygulamanın içine gömülüdür, üçüncü taraf istek yapılmaz.
 
 ## Nasıl çalışır
@@ -46,6 +49,8 @@ Etkinliklerde basılı kartvizit vermek yerine telefonunu göstermek, evdeki mis
 - **vCard:** `BEGIN:VCARD ... END:VCARD`. LinkedIn, X, WhatsApp gibi linkler etiketli `URL` satırlarıdır (`itemN.URL` ve `itemN.X-ABLabel`). Türkçe karakterler UTF-8 olarak kodlanır.
 - **Wi-Fi:** `WIFI:T:WPA;S:ağ_adı;P:şifre;;` standart biçimi. Özel karakterler (`\ ; , : "`) kaçırılır.
 - **QR:** [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator). Kütüphane varsayılan olarak Türkçe karakterleri bozduğu için baytlar `TextEncoder` ile UTF-8'e çevrilir. Testler üretilen QR'ı jsQR ile geri okuyup içeriğin birebir aynı çıktığını doğrular.
+- **Konumlar:** "İş" gibi başlık "İş konumu" etiketine çevrilir. Düz adres `https://www.google.com/maps/search/?api=1&query=...` linkine, harita linki olduğu gibi kullanılır. Eski sürümdeki tek konum alanı ilk konuma taşınır.
+- **IBAN:** `normalizeIban`, `formatIban` ve `isValidIban` (ISO 13616 mod-97, Türk IBAN'ı için 26 karakter). Kopyalarken boşluksuz, mesajda 4'lü gruplarla yazılır.
 - **Tek link modu ve WhatsApp:** telefon numarasından `https://wa.me/<numara>` üretilir. İstenirse WhatsApp'ın kullanıcı adı için verdiği link olduğu gibi kullanılır.
 - **Kişi paylaşımı:** iOS 15 ve üstünde `navigator.share` ile .vcf dosyası, iOS 14'te okunabilir metin gönderilir.
 
@@ -93,12 +98,13 @@ Hedef Safari 14 olduğu için derleme `esbuild --target=safari14` ile yapılır.
 ```
 src/
   main.ts          olaylar, durum, paylaşım, sürükleme, kaydırma
-  views.ts         Kart, Wi-Fi, Kişiler, Paylaş ekranları
+  views.ts         Kart, Wi-Fi, Banka, Kişiler, Paylaş ekranları
   sheets.ts        formlar ve alt pencereler
   vcard.ts         vCard üretimi
   vcard-import.ts  .vcf okuma
   wifi.ts          Wi-Fi QR metni
-  links.ts         telefon, LinkedIn, X, WhatsApp link kuralları
+  links.ts         telefon, LinkedIn, X, WhatsApp ve konum link kuralları
+  iban.ts          IBAN doğrulama, biçimlendirme, hesap mesajı
   contact-text.ts  "Kişiyi gönder" mesajları
   codec.ts         yedek ve kart kodları (KQR1:)
   qr.ts            QR üretimi ve okunabilirlik

@@ -3,11 +3,12 @@ import { test } from 'node:test'
 import jsQR from 'jsqr'
 import { decodeShare, encodeBackup, encodeProfile } from './codec.ts'
 import { contactText, linkMessage } from './contact-text.ts'
-import { availableLinks, e164, linkedinUrl, whatsappUrl, xUrl } from './links.ts'
+import { accountText, formatIban, isValidIban, normalizeIban } from './iban.ts'
+import { availableLinks, e164, linkedinUrl, locationLabel, whatsappUrl, xUrl } from './links.ts'
 import { moveItem } from './order.ts'
 import { makeQr } from './qr.ts'
 import { buildVCard } from './vcard.ts'
-import { emptyNetwork, emptyProfile, sanitizeState } from './validate.ts'
+import { emptyNetwork, emptyProfile, sanitizeProfile, sanitizeState } from './validate.ts'
 import { buildWifi } from './wifi.ts'
 
 const sample = {
@@ -84,11 +85,90 @@ test('kısa kişi mesajı QR kısa kartıyla aynı alanları içerir', () => {
   assert.doesNotMatch(short, /Mühendis|Web:|Adres|LinkedIn|WhatsApp|X:/)
 })
 
-test('tek link mesajı kişiyi ve seçilen linki içerir', () => {
-  const maps = { ...sample, mapsUrl: 'https://maps.app.goo.gl/abc' }
-  const link = availableLinks(maps).find((l) => l.key === 'maps')
+const withLocations = {
+  ...sample,
+  locations: [
+    { id: 'ev', label: 'Ev', place: 'https://maps.app.goo.gl/abc' },
+    { id: 'is', label: 'İş', place: 'Örnek Mah. No 5, İstanbul' },
+  ],
+}
+
+test('birden fazla konum: etiketler, harita linki ve düz adres linke çevrilir', () => {
+  const locs = availableLinks(withLocations).filter((l) => l.key.startsWith('loc:'))
+  assert.deepEqual(locs.map((l) => l.key), ['loc:ev', 'loc:is'])
+  assert.deepEqual(locs.map((l) => l.label), ['Ev konumu', 'İş konumu'])
+  assert.equal(locs[0]?.url, 'https://maps.app.goo.gl/abc')
+  assert.equal(locs[1]?.url, `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent('Örnek Mah. No 5, İstanbul')}`)
+  assert.equal(locationLabel(''), 'Konum')
+  assert.equal(locationLabel('Konum 2'), 'Konum 2')
+  assert.equal(locationLabel('Şube'), 'Şube konumu')
+})
+
+test('tek link mesajı kişiyi ve seçilen konumu içerir', () => {
+  const link = availableLinks(withLocations).find((l) => l.key === 'loc:ev')
   assert.ok(link !== undefined)
-  assert.equal(linkMessage(maps, link), 'Ayşe Yılmaz · Konum\nhttps://maps.app.goo.gl/abc')
+  assert.equal(linkMessage(withLocations, link), 'Ayşe Yılmaz · Ev konumu\nhttps://maps.app.goo.gl/abc')
+})
+
+test('tam kart: konumlar mesajda ve vCard etiketli URL satırlarında yer alır', () => {
+  const text = contactText(withLocations)
+  assert.match(text, /Ev konumu: https:\/\/maps\.app\.goo\.gl\/abc/)
+  assert.match(text, /İş konumu: https:\/\/www\.google\.com\/maps\/search/)
+  const card = buildVCard(withLocations, 'full')
+  assert.match(card, /item\d+\.X-ABLabel:Ev konumu/)
+  assert.match(card, /item\d+\.X-ABLabel:İş konumu/)
+  assert.doesNotMatch(buildVCard(withLocations, 'short'), /konumu/)
+})
+
+test('eski mapsUrl alanı ilk konuma taşınır, yeni sürüm bilgileri korunur', () => {
+  const migrated = sanitizeProfile({ firstName: 'Ali', mapsUrl: 'https://maps.app.goo.gl/old' })
+  assert.equal(migrated?.locations.length, 1)
+  assert.equal(migrated?.locations[0]?.place, 'https://maps.app.goo.gl/old')
+  const kept = sanitizeProfile({ firstName: 'Ali', mapsUrl: 'x', locations: [{ id: 'a', label: 'İş', place: 'https://maps.app.goo.gl/new' }] })
+  assert.equal(kept?.locations.length, 1)
+  assert.equal(kept?.locations[0]?.label, 'İş')
+  const dropped = sanitizeProfile({ firstName: 'Ali', locations: [{ id: 'a', label: 'Boş', place: '   ' }] })
+  assert.equal(dropped?.locations.length, 0)
+})
+
+const VALID_TR_IBAN = 'TR330006100519786457841326'
+
+test('IBAN: biçimlendirme, mod-97 doğrulama ve Türk IBAN uzunluğu', () => {
+  assert.equal(normalizeIban(' tr33 0006-1005 1978 6457 8413 26 '), VALID_TR_IBAN)
+  assert.equal(formatIban(VALID_TR_IBAN), 'TR33 0006 1005 1978 6457 8413 26')
+  assert.equal(isValidIban(VALID_TR_IBAN), true)
+  assert.equal(isValidIban('TR33 0006 1005 1978 6457 8413 26'), true)
+  assert.equal(isValidIban('DE89 3704 0044 0532 0130 00'), true)
+  assert.equal(isValidIban('TR330006100519786457841327'), false)
+  assert.equal(isValidIban('TR3300061005197864578413'), false)
+  assert.equal(isValidIban('1234'), false)
+  assert.equal(isValidIban(''), false)
+})
+
+test('hesap mesajı yalnızca dolu alanları içerir, IBAN gruplu yazılır', () => {
+  const account = { id: 'a', label: 'Şahsi TL', holder: 'Ayşe Yılmaz', bank: 'Örnek Banka', iban: VALID_TR_IBAN, note: 'Açıklamaya adını yaz' }
+  assert.equal(
+    accountText(account),
+    'Hesap sahibi: Ayşe Yılmaz\nBanka: Örnek Banka\nIBAN: TR33 0006 1005 1978 6457 8413 26\nAçıklama: Açıklamaya adını yaz',
+  )
+  assert.equal(accountText({ ...account, holder: '', bank: '', note: '' }), 'IBAN: TR33 0006 1005 1978 6457 8413 26')
+})
+
+test('hesaplar yedek koduna girer, boş IBAN\'lı kayıt atılır', () => {
+  const state = sanitizeState({
+    profiles: [sample],
+    accounts: [
+      { id: 'a', label: 'TL', holder: 'Ayşe', bank: 'B', iban: 'tr33 0006 1005 1978 6457 8413 26', note: '' },
+      { id: 'b', label: 'Boş', iban: '  ' },
+    ],
+    activeAccountId: 'a',
+  })
+  assert.equal(state.accounts.length, 1)
+  assert.equal(state.accounts[0]?.iban, VALID_TR_IBAN)
+  const back = decodeShare(encodeBackup(state))
+  assert.ok(back && back.kind === 'backup')
+  assert.equal(back.state.accounts[0]?.iban, VALID_TR_IBAN)
+  assert.equal(back.state.activeAccountId, 'a')
 })
 
 test('moveItem öğeyi taşır, sınırları korur, girdiyi değiştirmez', () => {

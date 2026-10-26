@@ -1,5 +1,5 @@
-import type { Profile } from './types.ts'
-import { emptyProfile } from './validate.ts'
+import type { Location, Profile } from './types.ts'
+import { emptyProfile, newId } from './validate.ts'
 
 interface Field {
   readonly name: string
@@ -118,10 +118,11 @@ function parseAddress(fields: readonly Field[]): string {
     .join(', ')
 }
 
-type UrlSlots = Pick<Profile, 'website' | 'linkedin' | 'x' | 'mapsUrl' | 'whatsappLink'>
+type UrlSlots = Pick<Profile, 'website' | 'linkedin' | 'x' | 'whatsappLink' | 'locations'>
 
 function classifyUrls(fields: readonly Field[]): UrlSlots {
-  const slots: { -readonly [K in keyof UrlSlots]: string } = { website: '', linkedin: '', x: '', mapsUrl: '', whatsappLink: '' }
+  const slots = { website: '', linkedin: '', x: '', whatsappLink: '' }
+  const locations: Location[] = []
   fields
     .filter((f) => f.name === 'URL' || f.name === 'X-SOCIALPROFILE')
     .map((f) => unescapeText(f.value).trim())
@@ -131,10 +132,10 @@ function classifyUrls(fields: readonly Field[]): UrlSlots {
       else if (X_HOST.test(url)) slots.x = slots.x || url
       else if (WA_ME_NUMBER.test(url)) return
       else if (WA_HOST.test(url)) slots.whatsappLink = slots.whatsappLink || url
-      else if (MAPS.test(url)) slots.mapsUrl = slots.mapsUrl || url
+      else if (MAPS.test(url)) locations.push({ id: newId(), label: '', place: url })
       else slots.website = slots.website || url
     })
-  return slots
+  return { ...slots, locations }
 }
 
 function toProfile(fields: readonly Field[]): Profile | null {

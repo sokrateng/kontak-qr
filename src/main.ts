@@ -1,14 +1,25 @@
 import { decodeShare, encodeBackup } from './codec.ts'
 import { contactText, linkMessage } from './contact-text.ts'
+import { accountText, isValidIban, normalizeIban } from './iban.ts'
 import { moveItem } from './order.ts'
 import { availableLinks } from './links.ts'
-import { networkOrderRows, renderSheet } from './sheets.ts'
+import { locationRow, orderRows, renderSheet } from './sheets.ts'
 import { loadState, saveState } from './store.ts'
-import type { AppState, CardMode, LinkKey, Profile, WifiNetwork, WifiSecurity } from './types.ts'
-import { initialUi, type Sheet, type Tab, type UiState } from './ui-state.ts'
+import type { AppState, BankAccount, CardMode, LinkKey, Location, Profile, WifiNetwork, WifiSecurity } from './types.ts'
+import { initialUi, SWIPE_TABS, type Sheet, type Tab, type UiState } from './ui-state.ts'
+import { emptyLocation, newId } from './validate.ts'
 import { buildVCard, fullName } from './vcard.ts'
 import { parseVCards } from './vcard-import.ts'
-import { renderCard, renderMore, renderPeople, renderTabbar, renderWifi, resolveLink } from './views.ts'
+import {
+  activeAccount,
+  renderBank,
+  renderCard,
+  renderMore,
+  renderPeople,
+  renderTabbar,
+  renderWifi,
+  resolveLink,
+} from './views.ts'
 
 let app: AppState = loadState()
 let ui: UiState = initialUi
@@ -46,6 +57,8 @@ function renderBody(): string {
       return renderCard(app, ui)
     case 'wifi':
       return renderWifi(app, ui)
+    case 'bank':
+      return renderBank(app)
     case 'people':
       return renderPeople(app)
     case 'more':
@@ -71,13 +84,17 @@ function fitNames(): void {
 const MIN_QR_SIZE = 150
 const MAX_QR_SIZE = 340
 
-/** Kart ve Wi-Fi sayfaları kaydırmasız olmalı: QR, ekran yüksekliğine sığana kadar küçülür. */
+/** Kart, Wi-Fi ve Banka sayfaları kaydırmasız olmalı: QR (varsa), ekran yüksekliğine sığana kadar küçülür. */
 function fitLayout(): void {
   const scroller = must('app')
-  const fixedTab = ui.tab === 'card' || ui.tab === 'wifi'
+  const fixedTab = SWIPE_TABS.includes(ui.tab)
   document.body.classList.toggle('fixed-tab', fixedTab)
   const frame = view.querySelector<HTMLElement>('.qr-frame')
-  if (!fixedTab || frame === null) return
+  if (!fixedTab) return
+  if (frame === null) {
+    if (scroller.scrollHeight > scroller.clientHeight + 1) document.body.classList.remove('fixed-tab')
+    return
+  }
   let size = Math.min(MAX_QR_SIZE, frame.offsetWidth)
   frame.style.maxWidth = `${size}px`
   while (scroller.scrollHeight > scroller.clientHeight + 1 && size > MIN_QR_SIZE) {
@@ -172,15 +189,20 @@ async function shareContact(p: Profile): Promise<void> {
   await shareText({ text: contactText(p, detail) })
 }
 
+/** Sağa sola kaydırınca bir sonraki/önceki kayda geçer (kişi, Wi-Fi ağı ya da banka hesabı). */
 function go(delta: 1 | -1): void {
-  const list = ui.tab === 'card' ? app.profiles : app.networks
-  const currentId = ui.tab === 'card' ? app.activeProfileId : app.activeNetworkId
-  if (list.length < 2) return
-  const current = Math.max(0, list.findIndex((item) => item.id === currentId))
-  const next = current + delta
-  const target = list[next]
+  const lists: Readonly<Record<string, { list: readonly { readonly id: string }[]; activeId: string | null }>> = {
+    card: { list: app.profiles, activeId: app.activeProfileId },
+    wifi: { list: app.networks, activeId: app.activeNetworkId },
+    bank: { list: app.accounts, activeId: app.activeAccountId },
+  }
+  const entry = lists[ui.tab]
+  if (entry === undefined || entry.list.length < 2) return
+  const current = Math.max(0, entry.list.findIndex((item) => item.id === entry.activeId))
+  const target = entry.list[current + delta]
   if (target === undefined) return
-  setApp(ui.tab === 'card' ? { ...app, activeProfileId: target.id } : { ...app, activeNetworkId: target.id })
+  const key = ui.tab === 'card' ? 'activeProfileId' : ui.tab === 'wifi' ? 'activeNetworkId' : 'activeAccountId'
+  setApp({ ...app, [key]: target.id })
   ui = { ...ui, reveal: false }
   render(false, delta === 1 ? 'next' : 'prev')
 }
@@ -188,7 +210,7 @@ function go(delta: 1 | -1): void {
 let touchStart: { x: number; y: number } | null = null
 
 function swipeAllowed(target: EventTarget | null): boolean {
-  if (ui.sheet !== null || (ui.tab !== 'card' && ui.tab !== 'wifi')) return false
+  if (ui.sheet !== null || !SWIPE_TABS.includes(ui.tab)) return false
   return !(target instanceof Element && target.closest('.chips, input, textarea, select') !== null)
 }
 
@@ -201,6 +223,15 @@ function upsert<T extends { readonly id: string }>(list: readonly T[], item: T):
   return list.some((entry) => entry.id === item.id)
     ? list.map((entry) => (entry.id === item.id ? item : entry))
     : [...list, item]
+}
+
+function readLocations(fd: FormData): readonly Location[] {
+  const ids = fd.getAll('locId').map(String)
+  const labels = fd.getAll('locLabel').map(String)
+  return fd
+    .getAll('locPlace')
+    .map((place, i) => ({ id: ids[i] || newId(), label: (labels[i] ?? '').trim(), place: String(place).trim() }))
+    .filter((loc) => loc.place !== '')
 }
 
 function saveProfile(fd: FormData): void {
@@ -217,7 +248,7 @@ function saveProfile(fd: FormData): void {
     email: text(fd, 'email'),
     website: text(fd, 'website'),
     address: text(fd, 'address'),
-    mapsUrl: text(fd, 'mapsUrl'),
+    locations: readLocations(fd),
     linkedin: text(fd, 'linkedin'),
     x: text(fd, 'x'),
   }
@@ -249,6 +280,48 @@ function saveWifi(fd: FormData): void {
   closeSheet()
   setUi({ tab: 'wifi', reveal: false }, { animate: true })
   toast('Kaydedildi')
+}
+
+function showFormError(form: HTMLFormElement, message: string): void {
+  const error = form.querySelector<HTMLElement>('[data-error]')
+  if (error === null) {
+    toast(message)
+    return
+  }
+  error.textContent = message
+  error.hidden = false
+}
+
+function saveAccount(form: HTMLFormElement, fd: FormData): void {
+  const iban = normalizeIban(text(fd, 'iban'))
+  if (iban === '') {
+    showFormError(form, 'IBAN gir.')
+    return
+  }
+  if (!isValidIban(iban)) {
+    showFormError(form, 'IBAN geçersiz görünüyor. Harf ve rakamları kontrol et (TR ile başlayan IBAN 26 karakterdir).')
+    return
+  }
+  const account: BankAccount = {
+    id: text(fd, 'id'),
+    label: text(fd, 'label'),
+    holder: text(fd, 'holder'),
+    bank: text(fd, 'bank'),
+    iban,
+    note: text(fd, 'note'),
+  }
+  setApp({ ...app, accounts: upsert(app.accounts, account), activeAccountId: account.id })
+  closeSheet()
+  setUi({ tab: 'bank' }, { animate: true })
+  toast('Kaydedildi')
+}
+
+function removeAccount(id: string): void {
+  if (!window.confirm('Bu hesap silinsin mi?')) return
+  const accounts = app.accounts.filter((a) => a.id !== id)
+  setApp({ ...app, accounts, activeAccountId: accounts[0]?.id ?? null })
+  closeSheet()
+  render(false)
 }
 
 function importCode(form: HTMLFormElement, fd: FormData): void {
@@ -373,7 +446,42 @@ function onAction(act: string, el: HTMLElement): void {
       void shareText({ text: appShareMessage() })
       break
     case 'sort-wifi':
-      openSheet({ kind: 'order-networks' })
+      openSheet({ kind: 'order', list: 'networks' })
+      break
+    case 'sort-bank':
+      openSheet({ kind: 'order', list: 'accounts' })
+      break
+    case 'new-account':
+      openSheet({ kind: 'account', id: null })
+      break
+    case 'edit-account':
+      openSheet({ kind: 'account', id: id ?? null })
+      break
+    case 'delete-account':
+      if (id !== undefined) removeAccount(id)
+      break
+    case 'share-account': {
+      const account = app.accounts.find((a) => a.id === id)
+      if (account !== undefined) void shareText({ text: accountText(account) })
+      break
+    }
+    case 'copy-iban': {
+      const account = app.accounts.find((a) => a.id === id) ?? activeAccount(app)
+      if (account !== null && account !== undefined) {
+        void copyText(normalizeIban(account.iban)).then((ok) => toast(ok ? 'IBAN kopyalandı' : 'Kopyalanamadı'))
+      }
+      break
+    }
+    case 'add-location': {
+      const list = document.querySelector<HTMLElement>('[data-loc-list]')
+      if (list === null) break
+      list.insertAdjacentHTML('beforeend', locationRow(emptyLocation()))
+      const rows = list.querySelectorAll<HTMLInputElement>('[name="locLabel"]')
+      rows[rows.length - 1]?.focus()
+      break
+    }
+    case 'remove-location':
+      el.closest('[data-loc-row]')?.remove()
       break
     case 'app-qr':
       openSheet({ kind: 'appqr' })
@@ -435,8 +543,9 @@ document.addEventListener(
     const el = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-copy]') : null
     const value = el?.dataset.copy
     if (value === undefined) return
+    const done = el?.dataset.copyToast ?? 'Link kopyalandı'
     holdTimer = window.setTimeout(() => {
-      void copyText(value).then((ok) => toast(ok ? 'Link kopyalandı' : 'Kopyalanamadı'))
+      void copyText(value).then((ok) => toast(ok ? done : 'Kopyalanamadı'))
     }, HOLD_MS)
   },
   { passive: true },
@@ -532,7 +641,10 @@ function finishDrag(commit: boolean): void {
   if (!commit || target === from) return
   if (list.dataset.order === 'networks') {
     setApp({ ...app, networks: moveItem(app.networks, from, target) })
-    list.innerHTML = networkOrderRows(app)
+    list.innerHTML = orderRows(app, 'networks')
+  } else if (list.dataset.order === 'accounts') {
+    setApp({ ...app, accounts: moveItem(app.accounts, from, target) })
+    list.innerHTML = orderRows(app, 'accounts')
   } else {
     setApp({ ...app, profiles: moveItem(app.profiles, from, target) })
   }
@@ -597,6 +709,9 @@ document.addEventListener('submit', (event) => {
       break
     case 'wifi':
       saveWifi(fd)
+      break
+    case 'account':
+      saveAccount(form, fd)
       break
     case 'import':
       importCode(form, fd)

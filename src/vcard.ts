@@ -37,7 +37,7 @@ export function buildVCard(p: Profile, detail: 'full' | 'short'): string {
       .filter((link) => link.key !== 'website')
       .forEach((link, index) => {
         const group = `item${index + 1}`
-        lines.push(`${group}.URL:${link.url}`, `${group}.X-ABLabel:${link.label}`)
+        lines.push(`${group}.URL:${link.url}`, `${group}.X-ABLabel:${escapeText(link.label)}`)
       })
   }
 

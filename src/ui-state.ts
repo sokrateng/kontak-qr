@@ -1,11 +1,15 @@
 import type { CardMode, LinkKey, Profile } from './types.ts'
 
-export type Tab = 'card' | 'wifi' | 'people' | 'more'
+export type Tab = 'card' | 'wifi' | 'bank' | 'people' | 'more'
+
+/** Kaydırmasız, ekrana sığan sayfalar: aralarında sağa sola kaydırılır. */
+export const SWIPE_TABS: readonly Tab[] = ['card', 'wifi', 'bank']
 
 export type Sheet =
   | { readonly kind: 'profile'; readonly id: string | null; readonly owner: boolean; readonly draft?: Profile }
   | { readonly kind: 'wifi'; readonly id: string | null }
-  | { readonly kind: 'order-networks' }
+  | { readonly kind: 'account'; readonly id: string | null }
+  | { readonly kind: 'order'; readonly list: 'networks' | 'accounts' }
   | { readonly kind: 'import' }
   | { readonly kind: 'appqr' }
   | null

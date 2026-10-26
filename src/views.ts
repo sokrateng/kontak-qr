@@ -1,7 +1,8 @@
 import { icons } from './icons.ts'
 import { availableLinks } from './links.ts'
 import { makeQr, type QrResult } from './qr.ts'
-import type { AppState, CardMode, LinkEntry, LinkKey, Profile, WifiNetwork } from './types.ts'
+import { formatIban, normalizeIban } from './iban.ts'
+import type { AppState, BankAccount, CardMode, LinkEntry, LinkKey, Profile, WifiNetwork } from './types.ts'
 import { escapeHtml as h, initials, type Tab, type UiState } from './ui-state.ts'
 import { buildVCard, fullName } from './vcard.ts'
 import { buildWifi } from './wifi.ts'
@@ -133,6 +134,54 @@ export function renderWifi(app: AppState, ui: UiState): string {
     ${app.networks.length > 1 ? '<p class="footnote rise" style="--d:4">Ağlar arasında geçmek için sağa ya da sola kaydır.</p>' : ''}`
 }
 
+export function activeAccount(app: AppState): BankAccount | null {
+  return app.accounts.find((a) => a.id === app.activeAccountId) ?? app.accounts[0] ?? null
+}
+
+/** IBAN'ı iki satıra böler: "TR33 0006 1005 1978" / "6457 8413 26". */
+function ibanLines(iban: string): string {
+  const groups = formatIban(iban).split(' ')
+  const rows = [groups.slice(0, 4).join(' '), groups.slice(4).join(' ')].filter((row) => row !== '')
+  return rows.map((row) => `<span>${h(row)}</span>`).join('')
+}
+
+export function accountTitle(a: BankAccount): string {
+  return a.label.trim() || a.bank.trim() || 'Banka hesabı'
+}
+
+export function renderBank(app: AppState): string {
+  const a = activeAccount(app)
+  if (a === null) {
+    return empty('Banka bilgilerin', 'IBAN ve hesap bilgisini bir kez kaydet. İstendiğinde tek dokunuşla kopyala ya da gönder.', 'new-account', 'Hesap ekle')
+  }
+  const index = app.accounts.findIndex((x) => x.id === a.id)
+  const sub = [a.holder, a.bank].filter((s) => s.trim() !== '' && s !== accountTitle(a)).join(' · ')
+  return `
+    ${dots(app.accounts.length, index)}
+    <article class="ticket rise" style="--d:1">
+      <header class="ticket-head">
+        <p class="eyebrow">BANKA HESABI</p>
+        <h1 class="display name">${h(accountTitle(a))}</h1>
+        ${sub === '' ? '' : `<p class="role">${h(sub)}</p>`}
+      </header>
+      <div class="iban-box" data-copy="${h(normalizeIban(a.iban))}" data-copy-toast="IBAN kopyalandı">
+        <span class="iban-label">IBAN</span>
+        <span class="iban">${ibanLines(a.iban)}</span>
+      </div>
+      <footer class="ticket-foot"><p class="dens-text">${a.note.trim() === '' ? 'IBAN\'a basılı tutarak da kopyalayabilirsin' : h(a.note.trim())}</p></footer>
+    </article>
+    <div class="row-actions rise" style="--d:2">
+      <button class="btn primary" data-act="share-account" data-id="${h(a.id)}">${icons.share}<span>Bilgileri gönder</span></button>
+      <button class="btn ghost" data-act="copy-iban" data-id="${h(a.id)}"><span>IBAN'ı kopyala</span></button>
+    </div>
+    <div class="row-actions rise" style="--d:3">
+      <button class="btn ghost" data-act="edit-account" data-id="${h(a.id)}">Düzenle</button>
+      <button class="btn ghost" data-act="new-account">${icons.plus}<span>Hesap ekle</span></button>
+      ${app.accounts.length > 1 ? '<button class="btn ghost" data-act="sort-bank"><span>Sırala</span></button>' : ''}
+    </div>
+    ${app.accounts.length > 1 ? '<p class="footnote rise" style="--d:4">Hesaplar arasında geçmek için sağa ya da sola kaydır.</p>' : ''}`
+}
+
 /** Kişiler listesi: sıra, Kart ekranındaki kaydırma sırasıyla birebir aynıdır (app.profiles dizisi). */
 export function renderPeople(app: AppState): string {
   const rows = app.profiles
@@ -201,6 +250,7 @@ export function renderMore(): string {
 const TABS: readonly { readonly tab: Tab; readonly label: string; readonly icon: string }[] = [
   { tab: 'card', label: 'Kart', icon: icons.card },
   { tab: 'wifi', label: 'Wi-Fi', icon: icons.wifi },
+  { tab: 'bank', label: 'Banka', icon: icons.bank },
   { tab: 'people', label: 'Kişiler', icon: icons.people },
   { tab: 'more', label: 'Paylaş', icon: icons.more },
 ]

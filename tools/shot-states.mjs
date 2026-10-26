@@ -15,10 +15,15 @@ const seed = {
   activeProfileId: 'me',
   activeNetworkId: 'home',
   profiles: [
-    { id: 'me', isOwner: true, firstName: 'Ayşe', lastName: 'Yılmaz', company: 'Örnek Teknoloji', title: 'Yazılım Mühendisi', phone: '0532 123 45 67', whatsappFromPhone: true, email: 'ayse@example.com', website: 'ornek.com.tr', address: 'Örnek Mah. Atatürk Cad. No:1 Kadıköy / İstanbul', mapsUrl: 'https://maps.app.goo.gl/abc123', linkedin: 'ayseyilmaz', x: '@ayseyilmaz' },
-    { id: 'f1', isOwner: false, firstName: 'Zeynep', lastName: 'Kaya', company: 'Orman Ürünleri', title: 'Satış Direktörü', phone: '0533 555 11 22', whatsappFromPhone: true, email: 'zeynep@example.com', website: '', address: '', mapsUrl: '', linkedin: '', x: '' },
+    { id: 'me', isOwner: true, firstName: 'Ayşe', lastName: 'Yılmaz', company: 'Örnek Teknoloji', title: 'Yazılım Mühendisi', phone: '0532 123 45 67', whatsappFromPhone: true, email: 'ayse@example.com', website: 'ornek.com.tr', address: 'Örnek Mah. Atatürk Cad. No:1 Kadıköy / İstanbul', locations: [{ id: 'l1', label: 'İş', place: 'https://maps.app.goo.gl/abc123' }, { id: 'l2', label: 'Ev', place: 'Örnek Mah. Gül Sok. No:3 Kadıköy / İstanbul' }], linkedin: 'ayseyilmaz', x: '@ayseyilmaz' },
+    { id: 'f1', isOwner: false, firstName: 'Zeynep', lastName: 'Kaya', company: 'Orman Ürünleri', title: 'Satış Direktörü', phone: '0533 555 11 22', whatsappFromPhone: true, email: 'zeynep@example.com', website: '', address: '', locations: [], linkedin: '', x: '' },
   ],
   networks: [{ id: 'home', label: 'Ev', ssid: 'EvAgi_5G', password: 'merhaba-2026', security: 'WPA', hidden: false }],
+  activeAccountId: 'tl',
+  accounts: [
+    { id: 'tl', label: 'Şahsi TL', holder: 'Ayşe Yılmaz', bank: 'Örnek Banka', iban: 'TR330006100519786457841326', note: 'Açıklamaya adını yaz' },
+    { id: 'eur', label: 'Avro', holder: 'Ayşe Yılmaz', bank: 'Örnek Banka', iban: 'DE89370400440532013000', note: '' },
+  ],
 }
 
 const browser = await puppeteer.launch({ headless: true })
@@ -49,6 +54,8 @@ try {
   await click('[data-act="tab"][data-tab="wifi"]')
   await shot('4-wifi')
   await click('[data-act="reveal"]')
+  await click('[data-act="tab"][data-tab="bank"]')
+  await shot('4b-banka')
   await click('[data-act="tab"][data-tab="people"]')
   await shot('5-kisiler')
   await click('[data-act="tab"][data-tab="more"]')
@@ -56,6 +63,8 @@ try {
   await click('[data-act="tab"][data-tab="people"]')
   await click('[data-act="edit-profile"]')
   await shot('7-form')
+  await page.evaluate(() => document.querySelector('.loc-section').scrollIntoView())
+  await shot('8-form-konumlar')
   if (errors.length > 0) console.log('HATALAR:', errors)
 } finally {
   await browser.close()

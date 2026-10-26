@@ -35,6 +35,7 @@ export function contactText(p: Profile, detail: 'full' | 'short' = 'full'): stri
     const found = links.find((l) => l.key === key)
     return found === undefined ? null : `${label}: ${found.url}`
   }
+  const locationLines = links.filter((l) => l.key.startsWith('loc:')).map((l) => `${l.label}: ${l.url}`)
   return join([
     name,
     role === '' ? null : role,
@@ -43,7 +44,7 @@ export function contactText(p: Profile, detail: 'full' | 'short' = 'full'): stri
     email,
     p.website.trim() === '' ? null : `Web: ${webUrl(p.website)}`,
     p.address.trim() === '' ? null : `Adres: ${p.address.trim().replace(/\s*\n\s*/g, ', ')}`,
-    linkLine('maps', 'Konum'),
+    ...locationLines,
     linkLine('linkedin', 'LinkedIn'),
     linkLine('x', 'X'),
     linkLine('whatsapp', 'WhatsApp'),

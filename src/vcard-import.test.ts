@@ -93,7 +93,8 @@ test('WhatsApp ve konum linkleri doğru alana düşer, numara linki yok sayılı
   const p = parseVCards(card)[0]
   assert.ok(p !== undefined)
   assert.equal(p.whatsappLink, 'https://wa.me/message/ABC123')
-  assert.equal(p.mapsUrl, 'https://maps.app.goo.gl/xyz')
+  assert.equal(p.locations.length, 1)
+  assert.equal(p.locations[0]?.place, 'https://maps.app.goo.gl/xyz')
   assert.equal(p.website, '')
 })
 

@@ -152,6 +152,124 @@ try {
     assert.ok(full.text.includes('Telefon: +90 532 111 22 33'))
   })
 
+  await step('birden fazla konum: ekle, sil, Tek link QR ve gönderme', async () => {
+    const sendNow = async () => {
+      await page.evaluate(() => { window.__shared = null })
+      await click('[data-act="share-contact"]')
+      return page.evaluate(() => window.__shared)
+    }
+    await click('[data-act="tab"][data-tab="people"]')
+    await click('.person [data-act="edit-profile"]')
+    await new Promise((r) => setTimeout(r, 700))
+    for (const [label, place] of [['Ev', 'https://maps.app.goo.gl/ev123'], ['İş', 'Örnek Mah. No 5, İstanbul'], ['Silinecek', 'https://maps.app.goo.gl/sil']]) {
+      await click('[data-act="add-location"]')
+      await page.evaluate((l, p) => {
+        const labels = document.querySelectorAll('[name="locLabel"]')
+        const places = document.querySelectorAll('[name="locPlace"]')
+        labels[labels.length - 1].value = l
+        places[places.length - 1].value = p
+      }, label, place)
+    }
+    assert.equal((await page.$$('[data-loc-row]')).length, 3)
+    await page.evaluate(() => document.querySelectorAll('[data-act="remove-location"]')[2].click())
+    assert.equal((await page.$$('[data-loc-row]')).length, 2)
+    await click('form[data-form="profile"] button[type="submit"]')
+    assert.equal(await text('.name'), 'Şule Öztürk')
+    await click('[data-act="mode"][data-mode="link"]')
+    const chips = await page.$$eval('.chips.small .chip', (els) => els.map((e) => e.textContent))
+    assert.ok(chips.includes('Ev konumu') && chips.includes('İş konumu'))
+    assert.ok(!chips.includes('Silinecek konumu'))
+    await page.evaluate(() => [...document.querySelectorAll('.chips.small .chip')].find((e) => e.textContent === 'Ev konumu').click())
+    assert.equal((await text('[data-act="share-contact"]')).trim(), 'Ev konumu linkini gönder')
+    assert.equal((await sendNow()).text, 'Şule Öztürk · Ev konumu\nhttps://maps.app.goo.gl/ev123')
+    await page.evaluate(() => [...document.querySelectorAll('.chips.small .chip')].find((e) => e.textContent === 'İş konumu').click())
+    const work = (await sendNow()).text
+    assert.ok(work.includes('İş konumu\nhttps://www.google.com/maps/search/?api=1&query='))
+    await click('[data-act="mode"][data-mode="full"]')
+    const full = (await sendNow()).text
+    assert.ok(full.includes('Ev konumu: https://maps.app.goo.gl/ev123'))
+    assert.ok(full.includes('İş konumu: https://www.google.com/maps/search/'))
+  })
+
+  await step('banka hesapları: IBAN doğrulama, ekleme, kopyalama, gönderme, kaydırma, sıralama', async () => {
+    const IBAN1 = 'TR33 0006 1005 1978 6457 8413 26'
+    const IBAN2 = 'DE89 3704 0044 0532 0130 00'
+    const addAccount = async (label, holder, bank, iban) => {
+      await click('[data-act="new-account"]')
+      await new Promise((r) => setTimeout(r, 500))
+      await fill('label', label)
+      await fill('holder', holder)
+      await fill('bank', bank)
+      await fill('iban', iban)
+      await click('form[data-form="account"] button[type="submit"]')
+    }
+    await page.evaluate(() => {
+      window.__copied = null
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (t) => { window.__copied = t } }, configurable: true })
+    })
+    await click('[data-act="tab"][data-tab="bank"]')
+    assert.match(await text('.empty h2'), /Banka bilgilerin/)
+    await click('[data-act="new-account"]')
+    await new Promise((r) => setTimeout(r, 500))
+    await fill('iban', 'TR33 0006 1005 1978 6457 8413 27')
+    await click('form[data-form="account"] button[type="submit"]')
+    assert.match(await text('[data-error]'), /IBAN geçersiz/)
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('kontak-qr:v1')).accounts?.length ?? 0), 0)
+    await click('.sheet-back')
+    await addAccount('Şahsi TL', 'Şule Öztürk', 'Örnek Banka', IBAN1)
+    await addAccount('Avro', 'Şule Öztürk', 'Başka Banka', IBAN2)
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('kontak-qr:v1')).accounts.map((a) => a.iban).join(',')), 'TR330006100519786457841326,DE89370400440532013000')
+    // Aktif hesap son eklenen (Avro), IBAN gruplu iki satırda
+    assert.equal(await text('.name'), 'Avro')
+    assert.deepEqual(await page.$$eval('.iban span', (els) => els.map((e) => e.textContent)), ['DE89 3704 0044 0532', '0130 00'])
+    await page.evaluate(() => { window.__shared = null })
+    await click('[data-act="share-account"]')
+    assert.equal(await page.evaluate(() => window.__shared.text), 'Hesap sahibi: Şule Öztürk\nBanka: Başka Banka\nIBAN: DE89 3704 0044 0532 0130 00')
+    await click('[data-act="copy-iban"]')
+    await new Promise((r) => setTimeout(r, 200))
+    assert.equal(await page.evaluate(() => window.__copied), 'DE89370400440532013000')
+    assert.match(await text('#toast'), /IBAN kopyalandı/)
+    // sağa sola kaydırma
+    const swipe = (dx) => page.evaluate((d) => {
+      const fire = (type, x) => {
+        const t = new Touch({ identifier: 1, target: document.body, clientX: x, clientY: 300 })
+        document.body.dispatchEvent(new TouchEvent(type, { bubbles: true, touches: type === 'touchend' ? [] : [t], changedTouches: [t] }))
+      }
+      fire('touchstart', 200); fire('touchend', 200 + d)
+    }, dx)
+    await swipe(120)
+    assert.equal(await text('.name'), 'Şahsi TL')
+    assert.equal(await page.$$eval('.dot', (els) => els.findIndex((e) => e.classList.contains('on'))), 0)
+    // basılı tutma ile IBAN kopyalama
+    await page.evaluate(() => { window.__copied = null })
+    const box = await (await page.$('.iban-box')).boundingBox()
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.down()
+    await new Promise((r) => setTimeout(r, 750))
+    await page.mouse.up()
+    assert.equal(await page.evaluate(() => window.__copied), 'TR330006100519786457841326')
+    // sıralama: Şahsi TL'yi sona taşı
+    await click('[data-act="sort-bank"]')
+    await new Promise((r) => setTimeout(r, 800))
+    const grips = await page.$$('.sheet .person .grip')
+    assert.equal(grips.length, 2)
+    const first = await grips[0].boundingBox()
+    const last = await grips[1].boundingBox()
+    await page.mouse.move(first.x + first.width / 2, first.y + first.height / 2)
+    await page.mouse.down()
+    for (let i = 1; i <= 12; i++) await page.mouse.move(first.x + first.width / 2, first.y + ((last.y + last.height + 8 - first.y) * i) / 12)
+    await page.mouse.up()
+    await new Promise((r) => setTimeout(r, 300))
+    assert.deepEqual(await page.$$eval('.sheet .person .person-text b', (els) => els.map((e) => e.textContent)), ['Avro', 'Şahsi TL'])
+    await click('.sheet [data-act="close-sheet"]')
+    await new Promise((r) => setTimeout(r, 300))
+    // hesabı sil
+    await click('[data-act="edit-account"]')
+    await new Promise((r) => setTimeout(r, 500))
+    await click('[data-act="delete-account"]')
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('kontak-qr:v1')).accounts.length), 1)
+  })
+
   await step('geçersiz kod hata gösterir', async () => {
     await click('[data-act="tab"][data-tab="people"]')
     await click('[data-act="open-import"]')

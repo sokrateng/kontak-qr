@@ -65,7 +65,29 @@ export function xUrl(raw: string): string {
   return handleUrl(raw, /(^|\.)(x|twitter)\.com/i, 'https://x.com/')
 }
 
+/** Harita linki ya da düz adres. Düz adres, Google Haritalar arama linkine çevrilir. */
+export function locationUrl(raw: string): string {
+  const value = raw.trim()
+  if (value === '') return ''
+  if (SCHEME.test(value) || /^(www\.)?(maps\.app\.goo\.gl|goo\.gl\/maps|google\.[a-z.]+\/maps|maps\.apple\.com)/i.test(value)) {
+    return webUrl(value)
+  }
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(value)}`
+}
+
+/** "İş" -> "İş konumu", boşsa "Konum". Kullanıcı zaten "konum" yazdıysa olduğu gibi bırakır. */
+export function locationLabel(label: string): string {
+  const value = label.trim()
+  if (value === '') return 'Konum'
+  return /konum/i.test(value) ? value : `${value} konumu`
+}
+
 export function availableLinks(p: Profile): readonly LinkEntry[] {
+  const locations: LinkEntry[] = p.locations.map((loc) => ({
+    key: `loc:${loc.id}` as const,
+    label: locationLabel(loc.label),
+    url: locationUrl(loc.place),
+  }))
   const entries: LinkEntry[] = [
     { key: 'linkedin', label: 'LinkedIn', url: linkedinUrl(p.linkedin) },
     { key: 'x', label: 'X', url: xUrl(p.x) },
@@ -75,7 +97,7 @@ export function availableLinks(p: Profile): readonly LinkEntry[] {
       url: whatsappProfileUrl(p.whatsappLink) || (p.whatsappFromPhone ? whatsappUrl(p.phone) : ''),
     },
     { key: 'website', label: 'Web', url: webUrl(p.website) },
-    { key: 'maps', label: 'Konum', url: webUrl(p.mapsUrl) },
+    ...locations,
   ]
   return entries.filter((entry) => entry.url !== '')
 }

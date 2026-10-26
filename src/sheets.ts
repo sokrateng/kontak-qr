@@ -1,8 +1,9 @@
+import { formatIban } from './iban.ts'
 import { icons } from './icons.ts'
 import { makeQr } from './qr.ts'
-import type { AppState, Profile, WifiNetwork } from './types.ts'
+import type { AppState, BankAccount, Location, Profile, WifiNetwork } from './types.ts'
 import { escapeHtml as h, type Sheet } from './ui-state.ts'
-import { emptyNetwork, emptyProfile } from './validate.ts'
+import { emptyAccount, emptyNetwork, emptyProfile } from './validate.ts'
 
 function field(label: string, name: string, value: string, attrs = ''): string {
   return `<label class="field"><span>${h(label)}</span><input name="${name}" value="${h(value)}" autocomplete="off" autocorrect="off" ${attrs}></label>`
@@ -26,6 +27,27 @@ function vcfImport(imported: boolean): string {
     }</p>`
 }
 
+/** Konum satırı: başlık (İş, Ev…) ve harita linki ya da adres. Forma dinamik eklenir/silinir. */
+export function locationRow(loc: Location): string {
+  return `<div class="loc-row" data-loc-row>
+    <input type="hidden" name="locId" value="${h(loc.id)}">
+    <div class="loc-fields">
+      <input name="locLabel" value="${h(loc.label)}" placeholder="Başlık (İş, Ev…)" autocomplete="off" autocapitalize="words" aria-label="Konum başlığı">
+      <input name="locPlace" value="${h(loc.place)}" placeholder="Harita linki ya da adres" inputmode="url" autocomplete="off" autocapitalize="none" aria-label="Konum linki ya da adresi">
+    </div>
+    <button type="button" class="icon-btn" data-act="remove-location" aria-label="Konumu sil">${icons.close}</button>
+  </div>`
+}
+
+function locationsSection(p: Profile): string {
+  return `<div class="loc-section">
+    <p class="loc-title">Konumlar</p>
+    <div class="loc-list" data-loc-list>${p.locations.map(locationRow).join('')}</div>
+    <button type="button" class="btn ghost small" data-act="add-location">${icons.plus}<span>Konum ekle</span></button>
+    <p class="field-note loc-note">Haritalar'dan Paylaş, Kopyala ile aldığın linki ya da düz bir adresi yazabilirsin. Her konum için ayrı QR verilebilir.</p>
+  </div>`
+}
+
 function profileForm(p: Profile, isNew: boolean, imported: boolean): string {
   const title = isNew ? (p.isOwner ? 'Kartını oluştur' : 'Arkadaş ekle') : 'Bilgileri düzenle'
   return shell(
@@ -46,7 +68,7 @@ function profileForm(p: Profile, isNew: boolean, imported: boolean): string {
       ${field('E-posta', 'email', p.email, 'type="email" inputmode="email" autocapitalize="none" placeholder="ad@firma.com"')}
       ${field('Web sitesi', 'website', p.website, 'inputmode="url" autocapitalize="none" placeholder="firma.com"')}
       <label class="field"><span>Firma adresi</span><textarea name="address" rows="2" autocomplete="off">${h(p.address)}</textarea></label>
-      ${field('Google konum linki', 'mapsUrl', p.mapsUrl, 'inputmode="url" autocapitalize="none" placeholder="Haritalar uygulamasından kopyala"')}
+      ${locationsSection(p)}
       ${field('LinkedIn', 'linkedin', p.linkedin, 'autocapitalize="none" placeholder="kullanıcı adı veya link"')}
       ${field('X', 'x', p.x, 'autocapitalize="none" placeholder="@kullanıcı"')}
       <div class="form-actions">
@@ -77,26 +99,54 @@ function wifiForm(n: WifiNetwork, isNew: boolean): string {
   )
 }
 
-/** Sürüklenebilir ağ satırları. Sıra, Wi-Fi ekranındaki kaydırma sırasıdır (app.networks dizisi). */
-export function networkOrderRows(app: AppState): string {
-  return app.networks
-    .map(
-      (n) => `<li class="person" data-id="${h(n.id)}">
+function accountForm(a: BankAccount, isNew: boolean): string {
+  return shell(
+    isNew ? 'Hesap ekle' : 'Hesabı düzenle',
+    `<form class="form" data-form="account" novalidate>
+      <input type="hidden" name="id" value="${h(a.id)}">
+      ${field('Başlık', 'label', a.label, 'placeholder="Şahsi TL, Firma USD…" autocapitalize="words"')}
+      ${field('Hesap sahibi', 'holder', a.holder, 'autocapitalize="words" placeholder="Ad Soyad ya da firma unvanı"')}
+      ${field('Banka', 'bank', a.bank, 'autocapitalize="words"')}
+      ${field('IBAN', 'iban', a.iban === '' ? '' : formatIban(a.iban), 'autocapitalize="characters" spellcheck="false" placeholder="TR00 0000 0000 0000 0000 0000 00"')}
+      <label class="field"><span>Açıklama (isteğe bağlı)</span><textarea name="note" rows="2" autocomplete="off" placeholder="Örn. Açıklamaya adını yaz">${h(a.note)}</textarea></label>
+      <p class="form-error" data-error hidden></p>
+      <div class="form-actions">
+        <button type="submit" class="btn primary">Kaydet</button>
+        ${isNew ? '' : `<button type="button" class="btn danger" data-act="delete-account" data-id="${h(a.id)}">Sil</button>`}
+      </div>
+    </form>`,
+  )
+}
+
+type OrderList = 'networks' | 'accounts'
+
+/** Sürüklenebilir satırlar. Sıra, ilgili ekrandaki kaydırma sırasıdır (app.networks / app.accounts dizisi). */
+export function orderRows(app: AppState, list: OrderList): string {
+  const row = (id: string, icon: string, title: string, sub: string): string => `<li class="person" data-id="${h(id)}">
         <div class="person-main">
-          <span class="avatar">${icons.wifi}</span>
-          <span class="person-text"><b>${h(n.label || n.ssid)}</b><small>${h(n.ssid)}</small></span>
+          <span class="avatar">${icon}</span>
+          <span class="person-text"><b>${h(title)}</b><small>${h(sub)}</small></span>
         </div>
         <span class="grip" data-grip role="button" aria-label="Sıralamak için sürükle">${icons.grip}</span>
-      </li>`,
-    )
+      </li>`
+  if (list === 'networks') {
+    return app.networks.map((n) => row(n.id, icons.wifi, n.label || n.ssid, n.ssid)).join('')
+  }
+  return app.accounts
+    .map((a) => {
+      const last4 = a.iban.slice(-4)
+      return row(a.id, icons.bank, a.label.trim() || a.bank.trim() || 'Banka hesabı', `${a.bank.trim() === '' ? 'IBAN' : a.bank.trim()} · …${last4}`)
+    })
     .join('')
 }
 
-function orderNetworksSheet(app: AppState): string {
+function orderSheet(app: AppState, list: OrderList): string {
+  const title = list === 'networks' ? 'Ağları sırala' : 'Hesapları sırala'
+  const where = list === 'networks' ? 'Wi-Fi' : 'Banka'
   return shell(
-    'Ağları sırala',
-    `<p class="sheet-note">Tutamaçtan sürükleyerek sırala. Wi-Fi ekranındaki kaydırma sırası da aynı olur.</p>
-    <ul class="people" data-order="networks">${networkOrderRows(app)}</ul>
+    title,
+    `<p class="sheet-note">Tutamaçtan sürükleyerek sırala. ${where} ekranındaki kaydırma sırası da aynı olur.</p>
+    <ul class="people" data-order="${list}">${orderRows(app, list)}</ul>
     <button class="btn primary block" data-act="close-sheet">Tamam</button>`,
   )
 }
@@ -136,8 +186,12 @@ export function renderSheet(sheet: Sheet, app: AppState, appUrl: string): string
       const found = app.networks.find((n) => n.id === sheet.id)
       return wifiForm(found ?? emptyNetwork(), found === undefined)
     }
-    case 'order-networks':
-      return orderNetworksSheet(app)
+    case 'account': {
+      const found = app.accounts.find((a) => a.id === sheet.id)
+      return accountForm(found ?? emptyAccount(), found === undefined)
+    }
+    case 'order':
+      return orderSheet(app, sheet.list)
     case 'import':
       return importSheet()
     case 'appqr':
