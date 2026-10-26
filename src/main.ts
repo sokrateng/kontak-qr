@@ -13,7 +13,6 @@ import { emptyLocation, newId } from './validate.ts'
 import { buildVCard, fullName } from './vcard.ts'
 import { parseVCards } from './vcard-import.ts'
 import {
-  activeAccount,
   renderBank,
   renderCard,
   renderMore,
@@ -543,13 +542,6 @@ function onAction(act: string, el: HTMLElement): void {
     case 'share-account': {
       const account = app.accounts.find((a) => a.id === id)
       if (account !== undefined) void shareText({ text: accountText(account) })
-      break
-    }
-    case 'copy-iban': {
-      const account = app.accounts.find((a) => a.id === id) ?? activeAccount(app)
-      if (account !== null && account !== undefined) {
-        void copyText(normalizeIban(account.iban)).then((ok) => toast(ok ? 'IBAN kopyalandı' : 'Kopyalanamadı'))
-      }
       break
     }
     case 'add-location': {

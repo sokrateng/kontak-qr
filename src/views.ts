@@ -179,12 +179,12 @@ export function renderBank(app: AppState): string {
       <div class="iban-box" data-copy="${h(normalizeIban(a.iban))}" data-copy-toast="IBAN kopyalandı">
         <span class="iban-label">IBAN</span>
         <span class="iban">${ibanLines(a.iban)}</span>
+        <span class="iban-hint">Kopyalamak için basılı tut</span>
       </div>
-      <footer class="ticket-foot"><p class="dens-text">${a.note.trim() === '' ? 'IBAN\'a basılı tutarak da kopyalayabilirsin' : h(a.note.trim())}</p></footer>
+      ${a.note.trim() === '' ? '' : `<footer class="ticket-foot"><p class="dens-text">${h(a.note.trim())}</p></footer>`}
     </article>
     <div class="row-actions rise" style="--d:2">
       <button class="btn primary" data-act="share-account" data-id="${h(a.id)}">${icons.share}<span>Bilgileri gönder</span></button>
-      <button class="btn ghost" data-act="copy-iban" data-id="${h(a.id)}"><span>IBAN'ı kopyala</span></button>
     </div>
     <div class="row-actions rise" style="--d:3">
       <button class="btn ghost" data-act="edit-account" data-id="${h(a.id)}">Düzenle</button>

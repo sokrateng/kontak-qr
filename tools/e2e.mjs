@@ -229,10 +229,9 @@ try {
     await page.evaluate(() => { window.__shared = null })
     await click('[data-act="share-account"]')
     assert.equal(await page.evaluate(() => window.__shared.text), 'Hesap sahibi: Şule Öztürk\nBanka: Başka Banka\nIBAN: DE89 3704 0044 0532 0130 00')
-    await click('[data-act="copy-iban"]')
-    await new Promise((r) => setTimeout(r, 200))
-    assert.equal(await page.evaluate(() => window.__copied), 'DE89370400440532013000')
-    assert.match(await text('#toast'), /IBAN kopyalandı/)
+    // Kopyala düğmesi yok, yerine her zaman görünen "basılı tut" notu var
+    assert.equal(await page.$('[data-act="copy-iban"]'), null)
+    assert.match(await text('.iban-hint'), /basılı tut/)
     // sağa sola kaydırma
     const swipe = (dx) => page.evaluate((d) => {
       const fire = (type, x) => {
@@ -253,6 +252,9 @@ try {
     await new Promise((r) => setTimeout(r, 750))
     await page.mouse.up()
     assert.equal(await page.evaluate(() => window.__copied), 'TR330006100519786457841326')
+    assert.match(await text('#toast'), /IBAN kopyalandı/)
+    // açıklaması olan hesapta da not görünür kalır
+    assert.match(await text('.iban-hint'), /basılı tut/)
     // sıralama: Şahsi TL'yi sona taşı
     await click('[data-act="sort-bank"]')
     await new Promise((r) => setTimeout(r, 800))
